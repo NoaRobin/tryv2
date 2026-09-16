@@ -1,5 +1,5 @@
 # =============================================================================
-#  core.py — Moteur de données et d'analyse de RFP Intelligence
+#  core.py — Moteur de données et d'analyse « RFP & Due Diligence »
 # -----------------------------------------------------------------------------
 #  RÈGLE D'ARCHITECTURE : ce fichier n'importe JAMAIS Streamlit.
 #  Il ne fait que : charger → normaliser → enrichir → filtrer → calculer →
@@ -29,20 +29,24 @@ _PANDAS_2 = int(pd.__version__.split(".")[0]) >= 2
 
 # =============================================================================
 #  [BRANCHEMENT PRINCIPAL] — TOUT CE QUI SE PARAMÈTRE TIENT DANS CE BLOC
-#  Pour brancher le dashboard sur les vraies données :
-#    1. USE_FAKE_DATA = False
-#    2. DATA_PATH / SHEET_NAME → chemin et onglet du fichier Excel
-#    3. COLUMN_MAP → à droite, le nom EXACT des colonnes du fichier
-#       (la correspondance est tolérante : casse, accents, espaces et
-#        underscores sont ignorés — "Date Réception" == "date_reception")
-#    4. Les colonnes absentes du fichier sont simplement neutralisées :
-#       les graphiques concernés disparaissent, l'application ne casse pas.
-#  Temps de branchement visé : 5 minutes.
+#  Brancher le produit sur les vraies données ne demande AUCUNE modification de
+#  ce fichier : déposer le classeur dans le dossier data/ (ou le déposer depuis
+#  l'écran « Données » de l'application), qui écrit data/branchement.json —
+#  fichier, onglet, correspondance des colonnes. Voir plus bas la section
+#  « BRANCHEMENT DES DONNÉES ».
+#
+#  Ce qui suit règle la LECTURE : les noms de colonnes attendus et leurs
+#  synonymes, le vocabulaire des statuts et des types, les seuils métier.
+#  Les colonnes absentes du fichier sont neutralisées : les analyses concernées
+#  disparaissent, l'application ne casse pas.
 # =============================================================================
 
-USE_FAKE_DATA = True          # True = données synthétiques, False = lecture Excel
-DATA_PATH = "données.xlsx"    # [BRANCHEMENT] remplacer par ton chemin
-SHEET_NAME = "Activité"       # [BRANCHEMENT] nom de l'onglet
+# Données de démonstration : None = automatique (le classeur branché s'il
+# existe, la démonstration sinon) ; True = toujours la démonstration ;
+# False = jamais (erreur explicite si aucun classeur n'est branché).
+USE_FAKE_DATA: bool | None = None
+DATA_PATH = "données.xlsx"    # chemin par défaut si aucun branchement n'est écrit
+SHEET_NAME = None             # onglet par défaut : le premier du classeur
 
 COLUMN_MAP = {
     "date_reception": "Date_Reception",   # [BRANCHEMENT] adapter aux noms réels
@@ -252,216 +256,119 @@ DIMENSIONS_PRINCIPALES = ("famille", "resultat", "pays", "classe_actifs",
                           "client", "expertise")
 
 # =============================================================================
-#  [BRANCHEMENT MARQUE] — identité de la maison
+#  [MARQUE] — une couleur, ses tons
 # -----------------------------------------------------------------------------
-#  Les trois couleurs ci-dessous sont une RECONSTRUCTION de l'identité
-#  Rothschild & Co — bleu de nuit et or — et non un extrait de la charte
-#  officielle : celle-ci n'est pas accessible depuis l'environnement de
-#  développement. Pour aligner le produit au pixel près, remplacer ces valeurs
-#  par celles de la charte et déposer le logo officiel dans `assets/logo.svg`.
-#  C'est le seul endroit à toucher : thème, rapport, barre latérale et page
-#  d'accueil s'y alimentent.
+#  Une seule teinte : le bleu Rothschild & Co. Toute autre couleur, à l'écran
+#  comme dans le rapport, est un mélange de ce bleu et du blanc (`teinte`).
+#  Ni or, ni vert / rouge, ni palette catégorielle : un état s'écrit en toutes
+#  lettres, il ne se colore pas. Les séries se distinguent par le ton, le
+#  contour et le libellé direct.
 #
-#  Même exigence que pour les données : rien n'est présenté comme officiel sans
-#  l'être. Le fichier livré dans `assets/logo.svg` est un repère géométrique
-#  — les cinq flèches — dessiné pour ce produit, pas la marque déposée.
+#  Si la charte fournit un code différent, MARQUE_BLEU est le seul endroit à
+#  corriger : tous les tons en découlent.
+#
+#  La marque est en tracés vectoriels dans assets/ (fill="currentColor", elle
+#  prend la couleur du texte) : logo.svg (emblème aux cinq flèches et logotype,
+#  horizontal), embleme.svg (les flèches seules), logo-empile.svg (vertical,
+#  pour une couverture). Pour installer le fichier officiel de la charte,
+#  déposer le SVG sous ces noms : rien d'autre à modifier.
 # =============================================================================
 MARQUE_NOM = "Rothschild & Co"
 MARQUE_ACTIVITE = "Asset Management"
-MARQUE_PRODUIT = "RFP Intelligence"
-MARQUE_LOGO = "logo.svg"            # dans assets/ ; absent → repli typographique
+MARQUE_PRODUIT = "RFP & Due Diligence"
+MARQUE_BLEU = "#0B2545"
+MARQUE_BLANC = "#FFFFFF"
+MARQUE_LOGO = "logo.svg"
+MARQUE_EMBLEME = "embleme.svg"
+MARQUE_LOGO_EMPILE = "logo-empile.svg"
 
-MARQUE_NUIT = "#0a1526"             # bleu de nuit : fond de page
-MARQUE_ENCRE = "#101e33"            # bleu profond : surfaces et aires de tracé
-MARQUE_OR = "#b9975b"               # or : accent, réservé au chrome et à la valeur
+
+def _hex_vers_rgb(couleur: str) -> tuple[int, int, int]:
+    h = couleur.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def melanger(a: str, b: str, t: float) -> str:
+    """Couleur à la position t entre a (t = 0) et b (t = 1), en sRGB."""
+    t = min(1.0, max(0.0, float(t)))
+    ra, ga, ba = _hex_vers_rgb(a)
+    rb, gb, bb = _hex_vers_rgb(b)
+    return "#{:02x}{:02x}{:02x}".format(
+        round(ra + (rb - ra) * t), round(ga + (gb - ga) * t), round(ba + (bb - ba) * t))
+
+
+def teinte(t: float) -> str:
+    """Le bleu de la maison à `t` (1 = plein, 0 = blanc), mélangé au blanc.
+
+    C'est la seule fabrique de couleur du produit : ce qui n'en sort pas n'a pas
+    sa place à l'écran.
+    """
+    return melanger(MARQUE_BLANC, MARQUE_BLEU, t)
+
+
+# Échelle de tons exposée en CSS (--b-3 … --b-100) : le système visuel entier
+# se compose avec ces huit valeurs.
+TONS: tuple[int, ...] = (3, 6, 12, 22, 36, 52, 72, 100)
+
+# Tons des cinq états d'un appel d'offres : du plus soutenu (remporté) au plus
+# effacé (sans suite). Toujours accompagnés du libellé et de la valeur.
+TONS_ETAT: dict[str, float] = {
+    "gagnes": 1.00, "en_attente": 0.66, "en_cours": 0.44, "perdus": 0.26, "sans_suite": 0.14,
+}
 
 
 # =============================================================================
-#  IDENTITÉ VISUELLE — quatre thèmes, une seule source de vérité
+#  IDENTITÉ VISUELLE — un thème, dérivé de la teinte
 # -----------------------------------------------------------------------------
-#  Le thème « sombre » est celui de l'écran et du rapport ; le thème « clair »
-#  existe pour l'impression (`python export.py --clair`). Chaque palette
-#  catégorielle a été passée au contrôle daltonisme / contraste sur SA surface :
-#    sombre : 8 slots sur #14181e — bande de clarté, chroma, séparation CVD et
-#             contraste ≥ 3:1 tous validés ; 3 premiers slots valides en
-#             toutes-paires (nuages de points).
-#    clair  : mêmes teintes re-étagées pour #fcfcfb.
-#  L'ORDRE des teintes est le mécanisme de sécurité daltonisme, pas une
-#  préférence esthétique : ne pas permuter sans revalider.
+#  Fond blanc, encre bleue, tout le reste en tons du bleu. Le thème est unique :
+#  l'écran et le rapport le partagent, il n'y a rien à basculer.
 # =============================================================================
 FONT_STACK = ('"InterVariable", "Inter", system-ui, -apple-system, "Segoe UI", '
               'Roboto, "Helvetica Neue", Arial, sans-serif')
-TEMPLATE_NAME = "rfp_premium"
+FONT_SERIF = '"EB Garamond", Garamond, "Times New Roman", serif'
+TEMPLATE_NAME = "rothschild"
 
 THEMES: dict[str, dict[str, Any]] = {
-    # Thème « maison » : l'identité de la société portée à l'écran, et le thème
-    # par défaut du produit. Bleu de nuit, filets d'or à très faible opacité,
-    # encre froide, angles courts. Direction artistique : surfaces plates,
-    # filets d'un pixel, micro-libellés en capitales espacées, chiffres
-    # tabulaires larges — la densité d'une salle de marché, pas d'une brochure.
-    #
-    # La palette de SÉRIES est celle, déjà validée, du thème sombre : elle
-    # repasse les contrôles (bande de clarté, chroma, séparation daltonisme,
-    # contraste ≥ 3:1) sur la surface bleu nuit #101e33. Une couleur de marque
-    # n'a pas à porter une donnée — l'or reste au chrome et à la valeur
-    # commerciale, jamais sur une série.
-    "maison": dict(
-        PLANE=MARQUE_NUIT,
-        SURFACE=MARQUE_ENCRE,
-        ELEVATION="#17293f",
-        INK="#eef2f7",
-        INK_2="#a9b8cc",
-        INK_MUTED="#7c8ea6",          # 4,9:1 sur la surface : lisible en petit corps
-        GRID="#1a2c45",
-        AXIS="#27405c",
-        BORDER="rgba(185,151,91,0.16)",   # filet d'or, à la limite du visible
-        VOILE="rgba(16,30,51,0.93)",
-        ACCENT=MARQUE_OR,
-        ACCENT_2="#d4b483",
-        SERIES=["#3987e5", "#d95926", "#199e70", "#c98500",
-                "#d55181", "#008300", "#9085e9", "#e66767"],
-        # Rampe séquentielle : le « presque rien » se fond dans le bleu de nuit,
-        # le maximum s'en détache. Les valeurs sont écrites dans les cellules
-        # (encre_lisible), l'identité ne repose jamais sur la seule couleur.
-        SEQUENTIEL=["#16283f", "#1a3c63", "#1d5290", "#2569b8",
-                    "#3182d6", "#549fe6", "#86b8f3"],
-        ORDINAL=["#2f7ccf", "#529ae2", "#84b6f2", "#b0d0f8"],
-        STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
-        STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
-        TEXTE_BON="#4ac45f", TEXTE_MAUVAIS="#ef7676",
-        RAYON="4px",
-        # Profondeur : trois ombres portées, empilées, de très faible opacité.
-        # Sur un fond sombre une ombre ne « tombe » pas — c'est le filet clair
-        # du bord supérieur qui donne le relief. D'où le inset en tête.
-        OMBRE_1="inset 0 1px 0 rgba(255,255,255,.045), 0 1px 2px rgba(0,0,0,.34)",
-        OMBRE_2=("inset 0 1px 0 rgba(255,255,255,.05), 0 2px 4px rgba(0,0,0,.30), "
-                 "0 8px 20px rgba(0,0,0,.30)"),
-        OMBRE_3=("inset 0 1px 0 rgba(255,255,255,.06), 0 4px 10px rgba(0,0,0,.34), "
-                 "0 18px 44px rgba(0,0,0,.40)"),
-        VERRE="rgba(16,30,51,.72)",
-        VERRE_BORD="rgba(185,151,91,.14)",
-        # Ambiance : deux nappes très basses, dans les teintes de la maison.
-        # Pas d'aurore multicolore — la lumière suggère la profondeur, elle ne
-        # se donne pas en spectacle.
-        AMBIANCE=("radial-gradient(1100px 620px at 78% -14%, rgba(185,151,91,.075), transparent 62%),"
-                  "radial-gradient(900px 560px at -8% 108%, rgba(57,135,229,.075), transparent 60%)"),
-    ),
-    "sombre": dict(
-        PLANE="#0d1014",          # fond de page
-        SURFACE="#14181e",        # cartes et aires de tracé
-        ELEVATION="#1b212a",      # survol, éléments soulevés
-        INK="#eef2f6",            # encre primaire
-        INK_2="#a7b2c0",          # encre secondaire
-        INK_MUTED="#6c7889",      # axes, libellés discrets
-        GRID="#222831",           # grille (filet plein, jamais pointillé)
-        AXIS="#2f3845",           # ligne de base
-        BORDER="rgba(255,255,255,0.08)",
-        VOILE="rgba(20,24,30,0.92)",     # fond des annotations posées sur un tracé
-        ACCENT="#3987e5",         # chrome : rail actif, liens, focus
-        ACCENT_2="#c9a227",       # laiton : réservé à la valeur commerciale
-        SERIES=["#3987e5", "#d95926", "#199e70", "#c98500",
-                "#d55181", "#008300", "#9085e9", "#e66767"],
-        # Rampe séquentielle : le « presque rien » se fond dans la surface,
-        # le maximum s'en détache — l'inverse exact du thème clair.
-        SEQUENTIEL=["#151f2b", "#193356", "#1c4a83", "#2260ab",
-                    "#2f79cc", "#4f95e0", "#7fb2f0"],
-        ORDINAL=["#2f79cc", "#4f95e0", "#7fb2f0", "#a9cbf6"],
-        STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
-        STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
-        TEXTE_BON="#4ac45f", TEXTE_MAUVAIS="#ef7676",
-        RAYON="10px",
-        OMBRE_1="inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.36)",
-        OMBRE_2=("inset 0 1px 0 rgba(255,255,255,.05), 0 2px 4px rgba(0,0,0,.32), "
-                 "0 8px 20px rgba(0,0,0,.32)"),
-        OMBRE_3=("inset 0 1px 0 rgba(255,255,255,.06), 0 4px 10px rgba(0,0,0,.36), "
-                 "0 18px 44px rgba(0,0,0,.42)"),
-        VERRE="rgba(20,24,30,.74)",
-        VERRE_BORD="rgba(255,255,255,.08)",
-        AMBIANCE=("radial-gradient(1000px 600px at 80% -12%, rgba(57,135,229,.10), transparent 62%),"
-                  "radial-gradient(800px 520px at -6% 106%, rgba(57,135,229,.06), transparent 60%)"),
-    ),
-    # Thème institutionnel : celui du produit. Fond ivoire froid, encre encre-
-    # marine, accent laiton réservé au chrome. Les séries de données gardent la
-    # palette validée (contrôles daltonisme / contraste passés sur #ffffff) :
-    # une couleur de marque n'a pas à porter une donnée.
-    "institutionnel": dict(
-        PLANE="#f5f5f2",
-        SURFACE="#ffffff",
-        ELEVATION="#fafaf8",
-        INK="#111823",
-        INK_2="#4b5563",
-        INK_MUTED="#7b8595",
-        GRID="#e8e8e3",
-        AXIS="#cfd1cb",
-        BORDER="rgba(17,24,35,0.11)",
+    "rothschild": dict(
+        PLANE=teinte(0.03),           # page : blanc très légèrement bleuté
+        SURFACE=MARQUE_BLANC,         # surfaces et aires de tracé
+        ELEVATION=teinte(0.06),       # survol, ligne sélectionnée
+        INK=MARQUE_BLEU,              # encre
+        INK_2=teinte(0.72),           # texte secondaire
+        INK_MUTED=teinte(0.52),       # libellés discrets, axes (4,5:1 sur blanc)
+        GRID=teinte(0.10),
+        AXIS=teinte(0.22),
+        BORDER=teinte(0.12),
         VOILE="rgba(255,255,255,0.94)",
-        ACCENT="#16314f",                 # encre marine : rail actif, titres
-        ACCENT_2="#9a7b28",               # laiton : réservé à la valeur commerciale
-        SERIES=["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-                "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
-        SEQUENTIEL=["#e4eefb", "#c2daf6", "#9ec5f4", "#6da7ec",
-                    "#3987e5", "#256abf", "#16406f"],
-        ORDINAL=["#2a78d6", "#1c5cab", "#184f95", "#104281"],
-        STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
-        STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
-        TEXTE_BON="#046b12", TEXTE_MAUVAIS="#a82f2f",
-        RAYON="10px",
-        OMBRE_1="0 1px 2px rgba(17,24,35,.07), 0 1px 1px rgba(17,24,35,.04)",
-        OMBRE_2="0 2px 5px rgba(17,24,35,.06), 0 10px 24px rgba(17,24,35,.07)",
-        OMBRE_3="0 4px 12px rgba(17,24,35,.08), 0 22px 52px rgba(17,24,35,.10)",
-        VERRE="rgba(255,255,255,.78)",
-        VERRE_BORD="rgba(17,24,35,.09)",
-        AMBIANCE=("radial-gradient(1100px 640px at 82% -16%, rgba(22,49,79,.055), transparent 62%),"
-                  "radial-gradient(880px 540px at -8% 106%, rgba(154,123,40,.045), transparent 60%)"),
-    ),
-    "clair": dict(
-        PLANE="#f7f6f3",
-        SURFACE="#fcfcfb",
-        ELEVATION="#ffffff",
-        INK="#0b0b0b",
-        INK_2="#52514e",
-        INK_MUTED="#898781",
-        GRID="#e6e4dd",
-        AXIS="#c3c2b7",
-        BORDER="rgba(11,11,11,0.10)",
-        VOILE="rgba(252,252,251,0.92)",
-        ACCENT="#0d366b",
-        ACCENT_2="#9a7b28",
-        SERIES=["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-                "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
-        SEQUENTIEL=["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
-                    "#256abf", "#184f95", "#0d366b"],
-        ORDINAL=["#2a78d6", "#1c5cab", "#184f95", "#104281"],
-        STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
-        STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
-        TEXTE_BON="#006300", TEXTE_MAUVAIS="#a82f2f",
-        RAYON="10px",
-        OMBRE_1="0 1px 2px rgba(11,11,11,.06), 0 1px 1px rgba(11,11,11,.04)",
-        OMBRE_2="0 2px 5px rgba(11,11,11,.05), 0 10px 24px rgba(11,11,11,.06)",
-        OMBRE_3="0 4px 12px rgba(11,11,11,.07), 0 22px 52px rgba(11,11,11,.09)",
-        VERRE="rgba(252,252,251,.80)",
-        VERRE_BORD="rgba(11,11,11,.08)",
-        AMBIANCE="none",
+        ACCENT=MARQUE_BLEU,
+        # Séries : tons décroissants. La première est l'encre pleine ; la
+        # deuxième et la troisième portent les séries secondaires. Au-delà de
+        # quatre séries, un graphique monochrome se lit par ses libellés.
+        SERIES=[teinte(1.0), teinte(0.62), teinte(0.34), teinte(0.18),
+                teinte(0.80), teinte(0.48), teinte(0.26), teinte(0.12)],
+        SEQUENTIEL=[teinte(t) for t in (0.06, 0.16, 0.28, 0.42, 0.58, 0.78, 1.0)],
+        ORDINAL=[teinte(t) for t in (1.0, 0.66, 0.40, 0.20)],
+        RAYON="2px",
     ),
 }
 
-# [BRANCHEMENT] Thème par défaut de l'écran et du rapport. « maison » porte
-# l'identité de la société ; « institutionnel » et « clair » restent disponibles
-# dans la barre latérale, le second étant celui de l'impression.
-THEME_DEFAUT = "maison"
+THEME_DEFAUT = "rothschild"
 
 # Jetons exposés au reste du programme — renseignés par appliquer_theme().
 THEME = THEME_DEFAUT
 PLANE = SURFACE = ELEVATION = INK = INK_2 = INK_MUTED = ""
-GRID = AXIS = BORDER = VOILE = ACCENT = ACCENT_2 = ""
-RAYON = "10px"        # rayon des cartes, propre au thème
-SUR_ACCENT = "#fff"   # encre à poser SUR un aplat d'accent (calculée, pas choisie)
+GRID = AXIS = BORDER = VOILE = ACCENT = ""
+RAYON = "2px"
+SUR_ACCENT = MARQUE_BLANC   # encre posée SUR un aplat de bleu
+# Couleurs « d'état » : des tons du bleu, jamais du vert ou du rouge. Les noms
+# historiques sont conservés pour les fonctions de tracé.
 STATUS_GOOD = STATUS_WARNING = STATUS_SERIOUS = STATUS_CRITICAL = ""
 TEXTE_BON = TEXTE_MAUVAIS = ""
 SERIES: list[str] = []
 SEQUENTIEL: list[str] = []
 ORDINAL: list[str] = []
 STATUT_COLORS: dict[str, str] = {}
+COMPARTIMENT_COLORS: dict[str, str] = {}
 TYPE_COLORS: dict[str, str] = {}
 CLIENT_TYPE_COLORS: dict[str, str] = {}
 
@@ -492,30 +399,29 @@ MOTION = {
 
 
 def jetons_css(selecteur: str = ":root") -> str:
-    """Tous les jetons du thème actif, en variables CSS.
-
-    Appelable plusieurs fois avec des sélecteurs différents : c'est ainsi que le
-    rapport embarque les deux palettes et bascule clair/sombre sans être
-    régénéré.
-    """
+    """Tous les jetons du thème, en variables CSS : couleurs (une teinte et ses
+    tons), espacement, typographie, mouvement. L'écran et le rapport lisent
+    exactement le même bloc."""
     jetons = {
+        "bleu": MARQUE_BLEU, "blanc": MARQUE_BLANC,
         "plane": PLANE, "surface": SURFACE, "elevation": ELEVATION,
         "ink": INK, "ink-2": INK_2, "muted": INK_MUTED,
         "grid": GRID, "axis": AXIS, "border": BORDER, "voile": VOILE,
-        "accent": ACCENT, "or": ACCENT_2, "sur-accent": SUR_ACCENT,
-        "bon": TEXTE_BON, "mauvais": TEXTE_MAUVAIS,
-        "attention": STATUS_WARNING, "neutre": INK_MUTED,
-        "gagne": STATUS_GOOD, "perdu": STATUS_CRITICAL, "sans-suite": STATUS_SERIOUS,
-        "attente": SERIES[0],
+        "accent": ACCENT, "sur-accent": SUR_ACCENT,
+        "bon": TEXTE_BON, "mauvais": TEXTE_MAUVAIS, "neutre": INK_MUTED,
+        "gagne": COMPARTIMENT_COLORS.get("gagnes", INK),
+        "attente": COMPARTIMENT_COLORS.get("en_attente", INK),
+        "redaction": COMPARTIMENT_COLORS.get("en_cours", INK),
+        "perdu": COMPARTIMENT_COLORS.get("perdus", INK),
+        "sans-suite": COMPARTIMENT_COLORS.get("sans_suite", INK),
         "rayon": RAYON,
-        "rayon-s": f"max(2px, calc({RAYON} - 3px))",
-        "rayon-l": f"calc({RAYON} + 4px)",
-        "ombre-1": THEMES[THEME]["OMBRE_1"], "ombre-2": THEMES[THEME]["OMBRE_2"],
-        "ombre-3": THEMES[THEME]["OMBRE_3"],
-        "verre": THEMES[THEME]["VERRE"], "verre-bord": THEMES[THEME]["VERRE_BORD"],
-        "ambiance": THEMES[THEME]["AMBIANCE"],
+        "rayon-s": RAYON,
+        "rayon-l": f"calc({RAYON} + 2px)",
         "police": FONT_STACK,
+        "police-serif": FONT_SERIF,
     }
+    for ton in TONS:
+        jetons[f"b-{ton}"] = teinte(ton / 100)
     for i, couleur in enumerate(SERIES, start=1):
         jetons[f"serie{i}"] = couleur
     for cle, valeur in ESPACEMENT.items():
@@ -526,41 +432,6 @@ def jetons_css(selecteur: str = ":root") -> str:
         jetons[cle] = valeur
     corps = "".join(f"--{c}:{v};" for c, v in jetons.items())
     return f"{selecteur}{{{corps}}}"
-
-
-# Jetons de CHROME : tout ce qui, dans une figure, appartient à la surface et
-# non à la donnée. Les couleurs de séries n'y sont pas — elles passent les
-# contrôles sur les deux surfaces et ne changent donc jamais.
-JETONS_CHROME = ("INK", "INK_2", "INK_MUTED", "GRID", "AXIS", "SURFACE",
-                 "ELEVATION", "PLANE")
-
-
-def _triplet(couleur: str) -> str:
-    """« #eef2f7 » → « 238,242,247 », la forme qu'écrit `_rgba`."""
-    h = couleur.lstrip("#")
-    return ",".join(str(int(h[i:i + 2], 16)) for i in (0, 2, 4))
-
-
-def substitutions(de: str, vers: str) -> list[list[str]]:
-    """Couples de couleurs à substituer dans une figure DÉJÀ construite pour
-    passer d'une apparence à l'autre.
-
-    Une figure Plotly fige ses couleurs : l'encre d'une annotation, le fond
-    d'une piste, l'anneau de surface d'une marque. Un simple `relayout` du
-    thème ne les atteint pas. Cette table, appliquée à tout ce qui est chaîne
-    dans la figure, les atteint toutes — et seulement celles-là, puisque les
-    teintes de séries n'y figurent pas.
-    """
-    a, b = THEMES[de], THEMES[vers]
-    paires: list[list[str]] = []
-    for cle in JETONS_CHROME:
-        src, dst = a[cle], b[cle]
-        if src == dst or not src.startswith("#") or not dst.startswith("#"):
-            continue
-        # La forme « r,g,b » d'abord : elle est plus longue, donc prioritaire.
-        paires.append([_triplet(src), _triplet(dst)])
-        paires.append([src, dst])
-    return paires
 
 
 def chrome_plotly() -> dict[str, Any]:
@@ -613,15 +484,16 @@ def couleur_rampe(rampe: Sequence[str], t: float) -> str:
 
 
 def appliquer_theme(nom: str = THEME_DEFAUT) -> None:
-    """Bascule tous les jetons de couleur et réenregistre le gabarit Plotly.
+    """Renseigne tous les jetons de couleur et enregistre le gabarit Plotly.
 
-    Les fonctions de tracé lisent ces noms à l'exécution : changer de thème
-    avant de construire les figures suffit, il n'y a rien d'autre à propager.
+    Il n'existe qu'un thème ; la fonction reste le seul point d'entrée, pour
+    que rien d'autre ne fabrique une couleur.
     """
     global THEME, PLANE, SURFACE, ELEVATION, INK, INK_2, INK_MUTED, GRID, AXIS
-    global BORDER, VOILE, ACCENT, ACCENT_2, SERIES, SEQUENTIEL, ORDINAL, RAYON, SUR_ACCENT
+    global BORDER, VOILE, ACCENT, SERIES, SEQUENTIEL, ORDINAL, RAYON, SUR_ACCENT
     global STATUS_GOOD, STATUS_WARNING, STATUS_SERIOUS, STATUS_CRITICAL
-    global TEXTE_BON, TEXTE_MAUVAIS, STATUT_COLORS, TYPE_COLORS, CLIENT_TYPE_COLORS
+    global TEXTE_BON, TEXTE_MAUVAIS, STATUT_COLORS, COMPARTIMENT_COLORS
+    global TYPE_COLORS, CLIENT_TYPE_COLORS
 
     if nom not in THEMES:
         raise ValueError(f"Thème inconnu : {nom!r}. Choix : {', '.join(THEMES)}.")
@@ -631,36 +503,37 @@ def appliquer_theme(nom: str = THEME_DEFAUT) -> None:
     INK, INK_2, INK_MUTED = jetons["INK"], jetons["INK_2"], jetons["INK_MUTED"]
     GRID, AXIS, BORDER, VOILE = jetons["GRID"], jetons["AXIS"], jetons["BORDER"], jetons["VOILE"]
     ACCENT = jetons["ACCENT"]
-    ACCENT_2 = jetons.get("ACCENT_2", ACCENT)
-    RAYON = jetons.get("RAYON", "10px")
-    # Un bouton primaire est un aplat d'accent : l'encre posée dessus se calcule,
-    # sinon un accent or reçoit du blanc et devient illisible.
+    RAYON = jetons.get("RAYON", "2px")
     SUR_ACCENT = encre_lisible(ACCENT)
     SERIES = list(jetons["SERIES"])
     SEQUENTIEL = list(jetons["SEQUENTIEL"])
     ORDINAL = list(jetons["ORDINAL"])
-    STATUS_GOOD, STATUS_WARNING = jetons["STATUS_GOOD"], jetons["STATUS_WARNING"]
-    STATUS_SERIOUS, STATUS_CRITICAL = jetons["STATUS_SERIOUS"], jetons["STATUS_CRITICAL"]
-    TEXTE_BON, TEXTE_MAUVAIS = jetons["TEXTE_BON"], jetons["TEXTE_MAUVAIS"]
 
-    # Couleurs d'état : réservées, jamais réutilisées pour une série d'identité.
-    # Le couple vert/rouge est indissociable sous deutéranopie : partout où ces
-    # couleurs servent, le libellé et la valeur sont écrits sur la marque
-    # (règle « icône + libellé ») et la vue tableau existe.
+    # Les cinq états d'un appel d'offres, par ton. Le libellé et la valeur
+    # accompagnent toujours la marque : le ton aide, il ne porte pas seul.
+    COMPARTIMENT_COLORS = {cle: teinte(t) for cle, t in TONS_ETAT.items()}
     STATUT_COLORS = {
-        STATUT_EN_COURS: INK_MUTED,      # neutre : aucun résultat encore
-        STATUT_ENVOYE: SERIES[0],        # en attente de décision
-        STATUT_GAGNE: STATUS_GOOD,
-        STATUT_PERDU: STATUS_CRITICAL,
-        STATUT_ABANDONNE: STATUS_SERIOUS,
+        STATUT_EN_COURS: COMPARTIMENT_COLORS["en_cours"],
+        STATUT_ENVOYE: COMPARTIMENT_COLORS["en_attente"],
+        STATUT_GAGNE: COMPARTIMENT_COLORS["gagnes"],
+        STATUT_PERDU: COMPARTIMENT_COLORS["perdus"],
+        STATUT_ABANDONNE: COMPARTIMENT_COLORS["sans_suite"],
     }
+    STATUS_GOOD = COMPARTIMENT_COLORS["gagnes"]
+    STATUS_WARNING = COMPARTIMENT_COLORS["en_attente"]
+    STATUS_CRITICAL = COMPARTIMENT_COLORS["perdus"]
+    STATUS_SERIOUS = COMPARTIMENT_COLORS["sans_suite"]
+    # Une variation se lit à son signe et à sa flèche, pas à sa couleur.
+    TEXTE_BON = INK
+    TEXTE_MAUVAIS = INK_2
     TYPE_COLORS = dict(zip(TYPE_ORDER, SERIES[:3]))
     CLIENT_TYPE_COLORS = dict(zip(["Institutionnel", "Distributeur", "Consultant"], SERIES[:3]))
     _register_template()
 
 
 def _register_template() -> None:
-    """Gabarit Plotly maison : marques fines, grille en filet, encre sobre."""
+    """Gabarit Plotly de la maison : marques fines, grille en filet très
+    léger, encre sobre, angles vifs."""
     axe = dict(
         showgrid=True, gridcolor=GRID, gridwidth=1, griddash="solid",
         zeroline=False, showline=True, linecolor=AXIS, linewidth=1,
@@ -672,7 +545,7 @@ def _register_template() -> None:
     pio.templates[TEMPLATE_NAME] = go.layout.Template(
         layout=go.Layout(
             font=dict(family=FONT_STACK, size=12.5, color=INK_2),
-            paper_bgcolor="rgba(0,0,0,0)",   # la carte hôte porte le fond
+            paper_bgcolor="rgba(0,0,0,0)",   # la surface hôte porte le fond
             plot_bgcolor="rgba(0,0,0,0)",
             colorway=SERIES,
             xaxis=axe,
@@ -685,40 +558,35 @@ def _register_template() -> None:
                 itemsizing="constant", tracegroupgap=6, traceorder="normal",
             ),
             hoverlabel=dict(
-                bgcolor=ELEVATION, bordercolor=AXIS, align="left",
+                bgcolor=SURFACE, bordercolor=AXIS, align="left",
                 font=dict(family=FONT_STACK, size=12, color=INK),
             ),
             hovermode="closest",
-            bargap=0.28,
-            separators=", ",   # virgule décimale, milliers en espace fine
+            bargap=0.32,
+            separators=", ",   # virgule décimale, milliers en espace fine
             colorscale=dict(sequential=[[i / (len(SEQUENTIEL) - 1), c]
                                         for i, c in enumerate(SEQUENTIEL)]),
             annotationdefaults=dict(font=dict(family=FONT_STACK, size=11.5, color=INK_2),
                                     showarrow=False),
         )
     )
-    try:   # extrémités de barres arrondies : Plotly >= 5.19 seulement
-        pio.templates[TEMPLATE_NAME].layout.barcornerradius = 4
-    except (ValueError, AttributeError):   # pragma: no cover — Plotly plus ancien
-        pass
 
 
 appliquer_theme(THEME_DEFAUT)
 
 
 # =============================================================================
-#  RESSOURCES EMBARQUÉES — animations Lottie et police variable
+#  RESSOURCES EMBARQUÉES — marque et polices
 # -----------------------------------------------------------------------------
 #  Tout est servi depuis assets/ et jamais depuis un CDN : l'écran comme le
-#  rapport doivent fonctionner sur un poste sans accès réseau.
-#  Si un fichier manque, la fonction renvoie une valeur vide : l'interface perd
-#  son animation, jamais son contenu.
+#  rapport fonctionnent sur un poste sans accès réseau. Si un fichier manque,
+#  la fonction renvoie une valeur vide : l'interface perd sa marque ou sa
+#  police, jamais son contenu.
 # =============================================================================
 DOSSIER_ASSETS = Path(__file__).resolve().parent / "assets"
-ANIMATIONS = ("marque", "flux", "chargement", "valide")
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=16)
 def _texte_asset(nom: str) -> str:
     try:
         return (DOSSIER_ASSETS / nom).read_text(encoding="utf-8")
@@ -726,7 +594,7 @@ def _texte_asset(nom: str) -> str:
         return ""
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=16)
 def _base64_asset(nom: str) -> str:
     try:
         return base64.b64encode((DOSSIER_ASSETS / nom).read_bytes()).decode("ascii")
@@ -734,45 +602,38 @@ def _base64_asset(nom: str) -> str:
         return ""
 
 
-@lru_cache(maxsize=8)
-def animation(nom: str) -> dict[str, Any] | None:
-    """Animation Lottie prête à sérialiser, ou None si le fichier manque."""
-    brut = _texte_asset(f"lottie/{nom}.json")
-    if not brut:
-        return None
-    try:
-        return json.loads(brut)
-    except json.JSONDecodeError:
-        return None
+def logo_svg(variante: str = "horizontal") -> str:
+    """La marque en SVG inline, fill="currentColor".
 
-
-def logo_svg() -> str:
-    """Marque de la maison en SVG inline — aucune requête réseau, aucun CDN.
-
-    Vide si `assets/logo.svg` est absent : l'interface retombe alors sur le seul
-    libellé typographique, sans rien casser.
+    `variante` : "horizontal" (emblème + logotype), "embleme" (les cinq flèches
+    seules), "empile" (vertical, pour une couverture). Vide si le fichier
+    manque : l'interface retombe sur le libellé typographique.
     """
-    return _texte_asset(MARQUE_LOGO).strip()
-
-
-def lecteur_lottie() -> str:
-    """Source du lecteur Lottie (build « light », licence MIT). Vide si absent."""
-    return _texte_asset("lottie_light.min.js")
+    nom = {"horizontal": MARQUE_LOGO, "embleme": MARQUE_EMBLEME,
+           "empile": MARQUE_LOGO_EMPILE}.get(variante, MARQUE_LOGO)
+    return _texte_asset(nom).strip()
 
 
 def police_css() -> str:
-    """Règle @font-face portant la police variable en base64.
+    """Règles @font-face des deux polices, en base64.
 
-    Inter est sous licence SIL OFL (assets/INTER-LICENSE.txt) : l'embarquer est
-    autorisé, et c'est la seule façon d'obtenir la même typographie sur un poste
-    hors ligne comme dans un rapport transmis par courriel.
+    Inter (interface) et EB Garamond (la voix de la marque : logotype, grands
+    chiffres) sont sous licence SIL OFL — voir assets/*-LICENSE.txt. Les
+    embarquer est autorisé, et c'est la seule façon d'obtenir la même
+    typographie hors ligne comme dans un rapport transmis par courriel.
     """
-    b64 = _base64_asset("inter-variable.woff2")
-    if not b64:
-        return ""
-    return ("@font-face{font-family:'InterVariable';font-style:normal;"
-            "font-weight:100 900;font-display:swap;"
-            f"src:url(data:font/woff2;base64,{b64}) format('woff2-variations');}}")
+    regles = []
+    inter = _base64_asset("inter-variable.woff2")
+    if inter:
+        regles.append("@font-face{font-family:'InterVariable';font-style:normal;"
+                      "font-weight:100 900;font-display:swap;"
+                      f"src:url(data:font/woff2;base64,{inter}) format('woff2-variations');}}")
+    garamond = _base64_asset("eb-garamond-latin.woff2")
+    if garamond:
+        regles.append("@font-face{font-family:'EB Garamond';font-style:normal;"
+                      "font-weight:400 800;font-display:swap;"
+                      f"src:url(data:font/woff2;base64,{garamond}) format('woff2-variations');}}")
+    return "".join(regles)
 
 
 PLOT_CONFIG = {
@@ -1549,6 +1410,15 @@ class LoadReport:
     valeurs_inconnues: dict[str, list[str]] = field(default_factory=dict)
     incoherences: dict[str, int] = field(default_factory=dict)
     horodatage: dt.datetime = field(default_factory=dt.datetime.now)
+    # "demo" (données de démonstration) ou "fichier" (classeur branché)
+    mode: str = "demo"
+    fichier: str = ""
+    onglet: str = ""
+    correspondance: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def est_demo(self) -> bool:
+        return self.mode == "demo"
 
     @property
     def alertes(self) -> list[str]:
@@ -1598,14 +1468,35 @@ def _cle(valeur: Any) -> str:
     return re.sub(r"\s+", " ", texte).strip()
 
 
-def _resoudre_colonnes(colonnes: Iterable[str]) -> tuple[dict[str, str], list[str], list[str]]:
-    """Associe chaque champ interne à la colonne réelle du fichier."""
+def _resoudre_colonnes(colonnes: Iterable[str],
+                       forcees: Mapping[str, str] | None = None
+                       ) -> tuple[dict[str, str], list[str], list[str]]:
+    """Associe chaque champ interne à la colonne réelle du fichier.
+
+    `forcees` : correspondance décidée par l'utilisateur (écran « Données » ou
+    data/branchement.json) ; elle prime sur la reconnaissance automatique.
+    Une colonne forcée absente du fichier est ignorée, jamais inventée.
+    """
+    colonnes = list(colonnes)
     index = {}
     for col in colonnes:
         index.setdefault(_cle(col), col)
+    # Second passage, sans le contenu des parenthèses ni les unités en fin
+    # d'intitulé : « Ticket (M€) » et « Montant en EUR » se reconnaissent.
+    for col in colonnes:
+        court = _cle(re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", str(col)))
+        court = re.sub(r"\b(en|in)?\s*(m€|k€|€|eur|euros?|meur|keur|%|pct|j|jours?|days?)$", "",
+                       court).strip()
+        if court:
+            index.setdefault(court, col)
     trouvees: dict[str, str] = {}
     absentes: list[str] = []
+    presentes = set(colonnes)
     for champ, nom_attendu in COLUMN_MAP.items():
+        forcee = (forcees or {}).get(champ)
+        if forcee and forcee in presentes:
+            trouvees[champ] = forcee
+            continue
         candidats = [nom_attendu, champ, *COLUMN_ALIASES.get(champ, [])]
         reelle = next((index[c] for c in map(_cle, candidats) if c in index), None)
         if reelle is None:
@@ -1769,10 +1660,12 @@ def _appliquer_normalisation(serie: pd.Series, table: Mapping[str, str],
     return resultat
 
 
-def normalize(brut: pd.DataFrame, source: str = "") -> tuple[pd.DataFrame, LoadReport]:
+def normalize(brut: pd.DataFrame, source: str = "",
+              correspondance: Mapping[str, str] | None = None
+              ) -> tuple[pd.DataFrame, LoadReport]:
     """Fichier brut → table canonique. Aucune ligne n'est écartée silencieusement."""
     rapport = LoadReport(source=source, n_lignes_source=len(brut))
-    colonnes, absentes, ignorees = _resoudre_colonnes(list(brut.columns))
+    colonnes, absentes, ignorees = _resoudre_colonnes(list(brut.columns), correspondance)
     rapport.colonnes_absentes = absentes
     rapport.colonnes_ignorees = ignorees
 
@@ -1784,7 +1677,8 @@ def normalize(brut: pd.DataFrame, source: str = "") -> tuple[pd.DataFrame, LoadR
         raise DonneesInvalides(
             f"Colonne{a} indispensable{a} introuvable{a} : {attendues}.\n"
             f"Colonnes présentes dans le fichier : {presentes}.\n"
-            f"→ Corriger COLUMN_MAP en tête de core.py (bloc [BRANCHEMENT PRINCIPAL])."
+            f"→ Indiquer la bonne colonne dans l'écran « Données », ou ajouter "
+            f"l'intitulé à COLUMN_ALIASES en tête de core.py."
         )
 
     df = pd.DataFrame(index=brut.index)
@@ -1920,33 +1814,205 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_data(path: str | None = None, sheet: str | None = None,
-              use_fake: bool | None = None) -> tuple[pd.DataFrame, LoadReport]:
-    """Point d'entrée unique : renvoie la table enrichie et son journal qualité."""
-    utiliser_fake = USE_FAKE_DATA if use_fake is None else use_fake
-    if utiliser_fake:
-        brut = generate_fake_data()
-        source = f"Données synthétiques ({fmt_int(len(brut))} lignes, graine {FAKE_SEED})"
-    else:
-        chemin = path or DATA_PATH
-        onglet = sheet if sheet is not None else SHEET_NAME
-        try:
-            brut = pd.read_excel(chemin, sheet_name=onglet)
-        except FileNotFoundError as exc:
-            raise DonneesInvalides(
-                f"Fichier introuvable : « {chemin} ».\n"
-                f"→ Corriger DATA_PATH en tête de core.py, ou repasser USE_FAKE_DATA à True."
-            ) from exc
-        except ValueError as exc:
-            raise DonneesInvalides(
-                f"Onglet « {onglet} » introuvable dans « {chemin} » ({exc}).\n"
-                f"→ Corriger SHEET_NAME en tête de core.py."
-            ) from exc
-        if isinstance(brut, dict):                     # sheet_name=None
-            brut = pd.concat(brut.values(), ignore_index=True)
-        source = f"{chemin} — onglet « {onglet} »"
+# =============================================================================
+#  BRANCHEMENT DES DONNÉES — dossier data/ et data/branchement.json
+# -----------------------------------------------------------------------------
+#  Trois façons de brancher un classeur, de la plus simple à la plus précise :
+#    1. déposer un fichier .xlsx / .xls / .csv dans data/ : s'il est seul, il
+#       est lu automatiquement (premier onglet, colonnes reconnues par
+#       COLUMN_MAP et COLUMN_ALIASES) ;
+#    2. depuis l'application, écran « Données » : déposer le fichier, choisir
+#       l'onglet, vérifier ou corriger la correspondance des colonnes, activer ;
+#    3. écrire data/branchement.json à la main (même contenu que 2).
+#  Les données réelles ne rejoignent jamais le dépôt : data/ est ignoré par git.
+# =============================================================================
+DOSSIER_DONNEES = Path(__file__).resolve().parent / "data"
+FICHIER_BRANCHEMENT = DOSSIER_DONNEES / "branchement.json"
+EXTENSIONS_DONNEES = (".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".txt")
 
-    df, rapport = normalize(brut, source=source)
+
+@dataclass
+class Branchement:
+    """Ce qu'il faut savoir pour lire le classeur : où, quel onglet, quelles
+    colonnes. `colonnes` : champ interne → intitulé réel, seulement pour les
+    champs que la reconnaissance automatique ne trouve pas d'elle-même."""
+    fichier: str | None = None
+    onglet: str | None = None
+    colonnes: dict[str, str] = field(default_factory=dict)
+    actif: bool = True
+
+    @property
+    def chemin(self) -> Path | None:
+        if not self.fichier:
+            return None
+        p = Path(self.fichier)
+        return p if p.is_absolute() else DOSSIER_DONNEES / p
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"fichier": self.fichier, "onglet": self.onglet,
+                "colonnes": dict(self.colonnes), "actif": self.actif}
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> "Branchement":
+        return cls(fichier=d.get("fichier") or None, onglet=d.get("onglet") or None,
+                   colonnes={str(k): str(v) for k, v in (d.get("colonnes") or {}).items() if v},
+                   actif=bool(d.get("actif", True)))
+
+
+def lire_branchement() -> Branchement | None:
+    """Le branchement écrit sur le disque, ou None s'il n'y en a pas."""
+    try:
+        return Branchement.from_dict(json.loads(FICHIER_BRANCHEMENT.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
+def ecrire_branchement(branchement: Branchement) -> Path:
+    DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
+    FICHIER_BRANCHEMENT.write_text(
+        json.dumps(branchement.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    return FICHIER_BRANCHEMENT
+
+
+def fichiers_disponibles() -> list[Path]:
+    """Classeurs et fichiers CSV présents dans data/, du plus récent au plus ancien."""
+    if not DOSSIER_DONNEES.is_dir():
+        return []
+    fichiers = [p for p in DOSSIER_DONNEES.iterdir()
+                if p.is_file() and p.suffix.lower() in EXTENSIONS_DONNEES
+                and not p.name.startswith((".", "~$"))]
+    return sorted(fichiers, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def onglets(chemin: str | Path) -> list[str]:
+    """Onglets d'un classeur ; liste vide pour un fichier texte."""
+    chemin = Path(chemin)
+    if chemin.suffix.lower() in (".csv", ".tsv", ".txt"):
+        return []
+    try:
+        with pd.ExcelFile(chemin) as classeur:
+            return [str(n) for n in classeur.sheet_names]
+    except (OSError, ValueError) as exc:
+        raise DonneesInvalides(f"Classeur illisible : « {chemin.name} » ({exc}).") from exc
+
+
+def lire_brut(chemin: str | Path, onglet: str | None = None) -> pd.DataFrame:
+    """Le fichier tel quel, sans aucune interprétation : un tableau de textes.
+
+    CSV : séparateur et encodage détectés (UTF-8 avec ou sans BOM, puis
+    Latin-1). Classeur : l'onglet demandé, sinon le premier.
+    """
+    chemin = Path(chemin)
+    if not chemin.exists():
+        raise DonneesInvalides(f"Fichier introuvable : « {chemin} ». Déposer le classeur dans "
+                               f"le dossier data/ ou le choisir dans l'écran « Données ».")
+    if chemin.suffix.lower() in (".csv", ".tsv", ".txt"):
+        derniere: Exception | None = None
+        for encodage in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+            try:
+                return pd.read_csv(chemin, sep=None, engine="python", encoding=encodage,
+                                   dtype=object, keep_default_na=True)
+            except UnicodeDecodeError as exc:
+                derniere = exc
+            except (pd.errors.ParserError, ValueError) as exc:
+                derniere = exc
+                break
+        raise DonneesInvalides(f"Fichier texte illisible : « {chemin.name} » ({derniere}).")
+    noms = onglets(chemin)
+    if onglet is not None and onglet not in noms:
+        raise DonneesInvalides(f"Onglet « {onglet} » introuvable dans « {chemin.name} ». "
+                               f"Onglets présents : {', '.join(noms) or 'aucun'}.")
+    return pd.read_excel(chemin, sheet_name=onglet if onglet is not None else 0)
+
+
+def apercu(chemin: str | Path, onglet: str | None = None,
+           correspondance: Mapping[str, str] | None = None, n: int = 8) -> dict[str, Any]:
+    """Ce que l'écran « Données » montre avant d'activer : colonnes trouvées,
+    correspondance proposée, champs indispensables manquants, premières lignes."""
+    chemin = Path(chemin)
+    brut = lire_brut(chemin, onglet)
+    colonnes = [str(c) for c in brut.columns]
+    trouvees, absentes, ignorees = _resoudre_colonnes(colonnes, correspondance)
+    lignes = brut.head(n).astype(object).where(brut.head(n).notna(), None)
+    return {
+        "fichier": chemin.name,
+        "onglets": onglets(chemin),
+        "onglet": onglet,
+        "n_lignes": int(len(brut)),
+        "colonnes": colonnes,
+        "correspondance": trouvees,
+        "absentes": absentes,
+        "obligatoires_manquants": [c for c in REQUIRED_FIELDS if c in absentes],
+        "ignorees": ignorees,
+        "lignes": [[(str(v) if v is not None else None) for v in ligne]
+                   for ligne in lignes.itertuples(index=False, name=None)],
+    }
+
+
+def resoudre_source(use_fake: bool | None = None) -> tuple[str, Branchement | None]:
+    """Quelle source lire : ("demo", None), ("branchement", b) ou ("auto", b).
+
+    Ordre : demande explicite, puis branchement écrit et actif dont le fichier
+    existe, puis classeur seul dans data/, puis démonstration (ou erreur si
+    USE_FAKE_DATA vaut False).
+    """
+    choix = USE_FAKE_DATA if use_fake is None else use_fake
+    if choix is True:
+        return "demo", None
+    b = lire_branchement()
+    if b is not None and b.actif and b.chemin is not None and b.chemin.exists():
+        return "branchement", b
+    fichiers = fichiers_disponibles()
+    if len(fichiers) == 1:
+        return "auto", Branchement(fichier=fichiers[0].name)
+    if choix is False:
+        if len(fichiers) > 1:
+            raise DonneesInvalides(
+                f"{len(fichiers)} fichiers dans data/ : choisir lequel lire dans l'écran "
+                f"« Données » ({', '.join(p.name for p in fichiers)}).")
+        raise DonneesInvalides("Aucun classeur branché : déposer un fichier .xlsx ou .csv dans "
+                               "le dossier data/, ou le déposer depuis l'écran « Données ».")
+    return "demo", None
+
+
+def load_data(path: str | None = None, sheet: str | None = None,
+              use_fake: bool | None = None,
+              correspondance: Mapping[str, str] | None = None
+              ) -> tuple[pd.DataFrame, LoadReport]:
+    """Point d'entrée unique : renvoie la table enrichie et son journal qualité.
+
+    Sans argument, la source est résolue par `resoudre_source` : le classeur
+    branché s'il existe, la démonstration sinon. `path` force un fichier.
+    """
+    if path is not None:
+        mode, branchement = "fichier", Branchement(fichier=path, onglet=sheet,
+                                                   colonnes=dict(correspondance or {}))
+    else:
+        mode, branchement = resoudre_source(use_fake)
+
+    if branchement is None:
+        brut = generate_fake_data()
+        source = (f"Données de démonstration ({fmt_int(len(brut))} lignes synthétiques, "
+                  f"graine {FAKE_SEED})")
+        df, rapport = normalize(brut, source=source)
+        rapport.mode = "demo"
+        return enrich(df), rapport
+
+    chemin = branchement.chemin if path is None else Path(path)
+    assert chemin is not None
+    onglet = branchement.onglet if sheet is None else sheet
+    brut = lire_brut(chemin, onglet)
+    if isinstance(brut, dict):                     # sheet_name=None
+        brut = pd.concat(brut.values(), ignore_index=True)
+    onglet_lu = onglet if onglet is not None else (onglets(chemin)[:1] or [""])[0]
+    source = chemin.name + (f" — onglet « {onglet_lu} »" if onglet_lu else "")
+    df, rapport = normalize(brut, source=source,
+                            correspondance=branchement.colonnes or correspondance)
+    rapport.mode = "fichier"
+    rapport.fichier = chemin.name
+    rapport.onglet = onglet_lu
+    rapport.correspondance = _resoudre_colonnes([str(c) for c in brut.columns],
+                                                branchement.colonnes or correspondance)[0]
     return enrich(df), rapport
 
 
@@ -2983,23 +3049,26 @@ FAMILLE_COULEURS = {}          # rempli par appliquer_theme via _couleurs_famill
 
 
 def _couleurs_famille() -> dict[str, str]:
-    """Due diligence = la charge de fond (teinte 1), RFP = l'enjeu commercial
-    (teinte 2). Deux séries seulement : la distinction reste lisible partout."""
-    return {FAMILLE_DD: SERIES[0], FAMILLE_RFP: SERIES[1]}
+    """La due diligence est la masse (ton clair), l'appel d'offres l'enjeu
+    commercial (encre pleine). Deux séries seulement : la distinction reste
+    lisible partout, et le libellé l'accompagne."""
+    return {FAMILLE_DD: SERIES[2], FAMILLE_RFP: SERIES[0]}
 
 
 def _couleurs_resultat() -> dict[str, str]:
-    """Le résultat d'un RFP est un état, pas une identité : couleurs d'état,
-    toujours accompagnées du libellé et de la valeur."""
-    return {RESULTAT_GAGNE: STATUS_GOOD, RESULTAT_ATTENTE: SERIES[0],
-            RESULTAT_PERDU: STATUS_CRITICAL, RESULTAT_SANS_SUITE: INK_MUTED}
+    """Le résultat d'un RFP est un état : ton du carnet, libellé et valeur
+    écrits sur la marque."""
+    return {RESULTAT_GAGNE: COMPARTIMENT_COLORS["gagnes"],
+            RESULTAT_ATTENTE: COMPARTIMENT_COLORS["en_attente"],
+            RESULTAT_PERDU: COMPARTIMENT_COLORS["perdus"],
+            RESULTAT_SANS_SUITE: COMPARTIMENT_COLORS["sans_suite"]}
 
 
 def _couleurs_esg() -> dict[str, str]:
-    """Rampe ordinale : plus la composante ESG est forte, plus la teinte est
-    soutenue. Aucun rouge/vert — l'ESG n'est ni un succès ni un échec."""
-    return {ESG_FORT: SEQUENTIEL[-2], ESG_MOYEN: SEQUENTIEL[-4],
-            ESG_FAIBLE: SEQUENTIEL[-6], ESG_INCONNU: INK_MUTED}
+    """Rampe ordinale : plus la composante ESG est forte, plus le ton est
+    soutenu. L'ESG n'est ni un succès ni un échec."""
+    return {ESG_FORT: teinte(1.0), ESG_MOYEN: teinte(0.58), ESG_FAIBLE: teinte(0.28),
+            ESG_INCONNU: teinte(0.10)}
 
 
 def _figure_rang(labels: Sequence[str], valeurs: Sequence[float],
@@ -3118,10 +3187,7 @@ def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     sans_famille = total - n_dd - n_rfp          # jamais masqué : il resterait un trou
     livre = carnet(df)
     couleurs_f = _couleurs_famille()
-    couleurs_compartiment = {
-        "en_cours": INK_MUTED, "en_attente": SERIES[0], "gagnes": STATUS_GOOD,
-        "perdus": STATUS_CRITICAL, "sans_suite": STATUS_SERIOUS,
-    }
+    couleurs_compartiment = dict(COMPARTIMENT_COLORS)
 
     # --- construction de l'arbre -------------------------------------------
     # Un nœud = (clé, libellé, effectif, couleur, niveau, clé du parent).
@@ -3275,10 +3341,10 @@ def _bloc_trimestre(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Blo
 
     mouvements = [
         ("Questionnaires reçus", serie(recus), fmt_int, SERIES[0]),
-        ("Appels d'offres reçus", serie(recus, recus["est_rfp"]), fmt_int, SERIES[1]),
-        ("Réponses envoyées", serie(envoyes), fmt_int, SERIES[2]),
+        ("Appels d'offres reçus", serie(recus, recus["est_rfp"]), fmt_int, SERIES[0]),
+        ("Réponses envoyées", serie(envoyes), fmt_int, SERIES[0]),
         ("Encours remporté", serie(recus, None, "aum_gagne"),
-         lambda v: fmt_dec(v, 0, "M€"), ACCENT_2),
+         lambda v: fmt_dec(v, 0, "M€"), SERIES[0]),
     ]
     mouvements = [m for m in mouvements if any(m[1])]
     if not mouvements:
@@ -4346,7 +4412,7 @@ def _bloc_facteurs(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bloc
         return None
 
     coefs = sorted(modele.explicatives, key=lambda c: c.valeur)
-    couleurs = [STATUS_CRITICAL if c.valeur > 0 else SERIES[0] for c in coefs]
+    couleurs = [SERIES[0] if c.valeur > 0 else SERIES[2] for c in coefs]
     fig = _fig(max(300, 44 * len(coefs) + 110))
     # Significativité encodée par le remplissage ET par le libellé : jamais
     # par la seule couleur.
@@ -4756,16 +4822,47 @@ def _autotest() -> None:
           f"{len(exclus)} réservé{accord(len(exclus))} à l'écran "
           f"({', '.join(sorted(exclus))})")
 
-    print("9. Thèmes")
-    initial = THEME
-    for nom in THEMES:
-        appliquer_theme(nom)
-        a = build_analysis(df.head(400), Filters(), rapport)
-        assert not a.erreurs, (nom, a.erreurs)
-    appliquer_theme(initial)
-    print(f"   ✓ {', '.join(THEMES)} — figures reconstruites sans erreur")
+    print("9. Une teinte, ses tons")
+    # Toute couleur du produit sort de `teinte` : on le vérifie sur les jetons
+    # exposés au CSS et sur les séries des figures.
+    import re as _re
+    admis = {teinte(t / 1000).lower() for t in range(0, 1001)} | {MARQUE_BLANC.lower()}
+    css = jetons_css()
+    for couleur in _re.findall(r"#[0-9a-fA-F]{6}", css):
+        assert couleur.lower() in admis, f"couleur hors teinte dans les jetons : {couleur}"
+    for couleur in SERIES + SEQUENTIEL + ORDINAL + list(STATUT_COLORS.values()):
+        assert couleur.lower() in admis, couleur
+    assert encre_lisible(MARQUE_BLEU) == "#ffffff"
+    a = build_analysis(df.head(400), Filters(), rapport)
+    assert not a.erreurs, a.erreurs
+    print(f"   ✓ {len(admis)} tons admis, jetons et séries conformes, figures reconstruites")
 
-    print("10. Cas limites")
+    print("10. Branchement d'un classeur aux en-têtes différents")
+    import tempfile as _tempfile
+    with _tempfile.TemporaryDirectory() as dossier:
+        brut = generate_fake_data().head(300).rename(columns={
+            "Date_Reception": "Date de réception", "Type": "Nature de la demande",
+            "Statut": "État", "Client_Nom": "Prospect", "Montant_EUR": "Ticket (M€)",
+            "Part_ESG": "Composante ESG", "Pays": "Juridiction"})
+        chemin = Path(dossier) / "extraction.xlsx"
+        brut.to_excel(chemin, sheet_name="Suivi", index=False)
+        vue = apercu(chemin, "Suivi")
+        assert vue["onglets"] == ["Suivi"] and not vue["obligatoires_manquants"], vue
+        assert vue["correspondance"]["date_reception"] == "Date de réception"
+        assert vue["correspondance"]["statut"] == "État"
+        assert "montant_potentiel" in vue["correspondance"], vue["absentes"]
+        # Une colonne que rien ne reconnaît se branche par correspondance forcée.
+        brut2 = brut.rename(columns={"Ticket (M€)": "Col_42"})
+        chemin2 = Path(dossier) / "extraction.csv"
+        brut2.to_csv(chemin2, index=False, sep=";", encoding="utf-8-sig")
+        vue2 = apercu(chemin2)
+        assert "montant_potentiel" in vue2["absentes"]
+        d2, r2 = load_data(path=str(chemin2), correspondance={"montant_potentiel": "Col_42"})
+        assert r2.mode == "fichier" and d2["montant_potentiel"].notna().any()
+        assert r2.correspondance["montant_potentiel"] == "Col_42"
+    print("   ✓ classeur et CSV lus, correspondance automatique et forcée")
+
+    print("11. Cas limites")
     vide = build_analysis(df.head(0), Filters(), rapport)
     assert vide.vide and not vide.blocs and not vide.erreurs and not vide.insights
     minuscule = build_analysis(df.head(3), Filters(), rapport)
