@@ -223,10 +223,13 @@ summary:hover{color:var(--ink)}
 /* Un bloc SANS figure est un tableau : il tient dans la colonne, quitte à
    passer à la ligne — on ne fait pas défiler une réponse. */
 .tableau--pleine{overflow-x:visible}
-.tableau--pleine table.donnees{font-size:12.5px}
-.tableau--pleine th,.tableau--pleine td{white-space:normal;overflow-wrap:anywhere;
-  hyphens:auto;padding-left:12px}
-.tableau--pleine th:last-child,.tableau--pleine td:last-child{white-space:nowrap}
+.tableau--pleine table.donnees{table-layout:fixed;font-size:12.5px}
+.tableau--pleine table.donnees th,.tableau--pleine table.donnees td{white-space:normal;
+  overflow-wrap:break-word;hyphens:auto;padding-left:12px}
+.tableau--pleine table.donnees th:first-child,
+.tableau--pleine table.donnees td:first-child{width:17%}
+.tableau--pleine table.donnees th:last-child,
+.tableau--pleine table.donnees td:last-child{width:10%;white-space:nowrap}
 table.donnees{width:100%;border-collapse:collapse;font-size:13px}
 table.donnees th{padding:8px 0 8px 16px;text-align:right;font-size:10px;font-weight:620;
   letter-spacing:.12em;text-transform:uppercase;color:var(--b-72);white-space:nowrap;
