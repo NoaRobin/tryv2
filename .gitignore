@@ -1,0 +1,16 @@
+# Artefacts générés
+rapport.html
+__pycache__/
+*.py[cod]
+
+# Données réelles : elles ne doivent jamais partir dans le dépôt
+*.xlsx
+*.xls
+*.csv
+!exemple_*.xlsx
+
+# Environnements et secrets
+.venv/
+venv/
+.streamlit/secrets.toml
+.DS_Store

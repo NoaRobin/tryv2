@@ -1,0 +1,14 @@
+# Thème des widgets Streamlit — aligné sur le thème « maison » de core.py, qui
+# est celui du produit. Ce thème-ci est STATIQUE : il ne peut pas suivre le
+# sélecteur d'apparence. C'est app.py qui repeint ensuite les surfaces en CSS,
+# à partir des variables du thème actif — voir WIDGETS_CSS.
+[theme]
+base = "dark"
+primaryColor = "#b9975b"
+backgroundColor = "#0a1526"
+secondaryBackgroundColor = "#101e33"
+textColor = "#eef2f7"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false

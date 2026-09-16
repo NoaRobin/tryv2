@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Les cinq flèches">
+<!-- Repère géométrique dessiné pour RFP Intelligence : les cinq flèches,
+     emblème historique de la maison. Ce n'est PAS la marque déposée.
+     Remplacer ce seul fichier par le logo officiel de la charte. -->
+  <path d="M23 48.66L4.4 24.85"/>
+  <path d="M4.4 24.85L12.35 28.56"/>
+  <path d="M4.4 24.85L6.07 33.46"/>
+  <path d="M27.24 46.35L17.4 17.79"/>
+  <path d="M17.4 17.79L23.71 23.88"/>
+  <path d="M17.4 17.79L16.18 26.47"/>
+  <path d="M32 45.56L32 15.34"/>
+  <path d="M32 15.34L35.98 23.16"/>
+  <path d="M32 15.34L28.02 23.16"/>
+  <path d="M36.76 46.35L46.6 17.79"/>
+  <path d="M46.6 17.79L47.82 26.47"/>
+  <path d="M46.6 17.79L40.29 23.88"/>
+  <path d="M41 48.66L59.6 24.85"/>
+  <path d="M59.6 24.85L57.93 33.46"/>
+  <path d="M59.6 24.85L51.65 28.56"/>
+  <path d="M19.4 44.05Q32 33.86 44.6 44.05"/>
+</svg>
