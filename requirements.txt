@@ -1,12 +1,14 @@
-# Dépendances minimales du dashboard d'activité RFP / RFI.
-# Installation :  pip install -r requirements.txt
+# Dépendances de l’application. Installation :  pip install -r requirements.txt
 #
-# Aucune bibliothèque scientifique lourde : les régressions, les p-values et
-# les intervalles de confiance sont implémentés dans core.py (SciPy et
-# statsmodels ne sont pas nécessaires).
+# Aucune bibliothèque scientifique lourde : les régressions, les p-values et les
+# intervalles de confiance sont implémentés dans core.py (SciPy et statsmodels
+# ne sont pas nécessaires). L’interface n’a aucune dépendance : pas d’étape de
+# construction, pas de gestionnaire de paquets JavaScript.
 
-streamlit>=1.31        # interface (app.py)
 pandas>=1.5            # manipulation des données
 numpy>=1.23            # calcul numérique et algèbre linéaire
-plotly>=5.19           # graphiques interactifs (écran et rapport HTML)
+plotly>=5.19           # figures interactives (écran et rapport HTML)
 openpyxl>=3.1          # lecture des classeurs .xlsx
+fastapi>=0.110         # API et service de l’interface (server.py)
+uvicorn>=0.27          # serveur ASGI
+python-multipart>=0.0.9  # dépôt d’un classeur depuis l’écran « Données »

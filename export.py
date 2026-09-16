@@ -220,6 +220,13 @@ details[open] summary::before{content:"−"}
 summary:hover{color:var(--ink)}
 
 .tableau{overflow-x:auto;margin-top:14px}
+/* Un bloc SANS figure est un tableau : il tient dans la colonne, quitte à
+   passer à la ligne — on ne fait pas défiler une réponse. */
+.tableau--pleine{overflow-x:visible}
+.tableau--pleine table.donnees{font-size:12.5px}
+.tableau--pleine th,.tableau--pleine td{white-space:normal;overflow-wrap:anywhere;
+  hyphens:auto;padding-left:12px}
+.tableau--pleine th:last-child,.tableau--pleine td:last-child{white-space:nowrap}
 table.donnees{width:100%;border-collapse:collapse;font-size:13px}
 table.donnees th{padding:8px 0 8px 16px;text-align:right;font-size:10px;font-weight:620;
   letter-spacing:.12em;text-transform:uppercase;color:var(--b-72);white-space:nowrap;
@@ -249,7 +256,7 @@ table.donnees tbody tr:last-child td{border-bottom:0}
 
 /* ---------------------------------------------------------------- carnet --- */
 .carnet__ruban{display:flex;gap:2px;height:10px}
-.carnet__seg{min-width:4px}
+.carnet__seg{min-width:7px}
 .carnet__colonnes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
   gap:22px 18px;margin-top:16px;padding-top:16px;border-top:1px solid var(--b-12)}
 .carnet__col{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -488,7 +495,7 @@ def _analyse_html(bloc: core.Block, indice: int, premiere: bool = False) -> str:
     """
     tableau = _tableau_html(bloc.tableau)
     if bloc.figure is None:
-        corps = f'<div class="tableau">{tableau}</div>'
+        corps = f'<div class="tableau tableau--pleine">{tableau}</div>'
         compte = core.pluriel(len(bloc.tableau), "ligne")
     else:
         figure = pio.to_html(bloc.figure, include_plotlyjs=False, full_html=False,
@@ -621,13 +628,15 @@ SCRIPT = r"""
   var suivant = document.getElementById('suivant');
   var courante = -1;
 
-  /* Plotly mesure à zéro dans un conteneur masqué : on redimensionne à
-     l’affichage, sinon les figures sortent écrasées. */
+  /* Plotly mesure à zéro dans un conteneur masqué : une figure peinte hors
+     écran sort écrasée, et les marges calculées pour ses titres d’axes sont
+     fausses. Un relayout complet à l’affichage les recalcule — un simple
+     resize, lui, garderait les marges de la mesure à zéro. */
   function redimensionner(page) {
     if (!page || !window.Plotly) return;
     var figures = page.querySelectorAll('.js-plotly-plot');
     for (var i = 0; i < figures.length; i++) {
-      try { window.Plotly.Plots.resize(figures[i]); } catch (e) {}
+      try { window.Plotly.relayout(figures[i], {autosize: true}); } catch (e) {}
     }
   }
 
@@ -749,15 +758,18 @@ def construire_rapport(analyse: core.Analysis, titre: str = TITRE_RAPPORT) -> st
             if cle == "synthese":
                 # LA DÉCOMPOSITION D’ABORD : d’où viennent les dossiers et où
                 # ils en sont. C’est la question du comité, avant les chiffres.
+                ouverture: list[str] = []
                 for phare in CLES_OUVERTURE:
                     bloc = next((b for b in blocs if b.cle == phare), None)
                     if bloc is None:
                         continue
-                    corps.append(_rubrique(bloc.titre,
-                                           _analyse_html(bloc, indice_figure, premiere=True),
-                                           nue=not corps))
+                    ouverture.append(_analyse_html(bloc, indice_figure,
+                                                   premiere=not ouverture))
                     indice_figure += 1
                     blocs = [b for b in blocs if b is not bloc]
+                if ouverture:
+                    corps.append('<section class="rubrique rubrique--nue">'
+                                 f'{"".join(ouverture)}</section>')
                 carnet = _carnet_html(analyse)
                 if carnet:
                     corps.append(_rubrique("Le carnet", carnet, nue=not corps))
