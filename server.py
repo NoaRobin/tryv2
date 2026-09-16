@@ -1,5 +1,5 @@
 # =============================================================================
-#  server.py — API et service de l'interface « RFP & Due Diligence »
+#  server.py — API et service de l’interface « RFP & Due Diligence »
 # -----------------------------------------------------------------------------
 #  Lancement :  python server.py            →  http://localhost:8000
 #               uvicorn server:app --reload  (développement)
@@ -8,14 +8,14 @@
 #  servi ici est un chiffre calculé là-bas, le même que dans le rapport.
 #
 #  Routes :
-#    GET  /                          l'application (static/index.html)
+#    GET  /                          l’application (static/index.html)
 #    GET  /api/meta                  source, dimensions, valeurs, périodes, marque
 #    GET  /api/analyse               KPI, constats, carnet, blocs (figures + tableaux)
 #    GET  /api/dossiers              liste filtrée, recherche plein texte, tri, pages
 #    GET  /api/dossiers/{id}         un dossier
 #    GET  /api/rapport               rapport HTML autonome sur le périmètre courant
 #    GET  /api/donnees               état du branchement, fichiers présents
-#    POST /api/donnees/fichier       dépôt d'un classeur dans data/
+#    POST /api/donnees/fichier       dépôt d’un classeur dans data/
 #    GET  /api/donnees/apercu        colonnes, correspondance proposée, premières lignes
 #    POST /api/donnees/activer       écrit data/branchement.json et recharge
 #    POST /api/donnees/demo          revient aux données de démonstration
@@ -48,11 +48,11 @@ app = FastAPI(title=f"{core.MARQUE_PRODUIT} — {core.MARQUE_NOM}", docs_url=Non
 
 
 # =============================================================================
-#  ÉTAT — la table chargée, son journal, et un cache d'analyses
+#  ÉTAT — la table chargée, son journal, et un cache d’analyses
 # =============================================================================
 class Etat:
     """La table enrichie et son journal, rechargés quand le branchement change.
-    `version` invalide le cache d'analyses."""
+    `version` invalide le cache d’analyses."""
 
     def __init__(self) -> None:
         self._verrou = threading.Lock()
@@ -160,7 +160,7 @@ LIBELLES_DOSSIER = {
     "date_reception": "Réception", "date_envoi": "Envoi", "famille": "Famille",
     "type_demande": "Type", "statut": "Statut", "resultat": "Résultat", "client": "Client",
     "consultant": "Consultant", "type_client": "Type de client", "pays": "Pays",
-    "fonds": "Fonds de référence", "classe_actifs": "Classe d'actifs",
+    "fonds": "Fonds de référence", "classe_actifs": "Classe d’actifs",
     "sous_classe_actifs": "Sous-classe", "forme_juridique": "Forme juridique",
     "expertise": "Expertise", "analyste": "Analyste", "langue": "Langue",
     "nb_questions": "Questions", "part_esg": "Part ESG", "bande_esg": "Tranche ESG",
@@ -168,12 +168,12 @@ LIBELLES_DOSSIER = {
     "delai_ouvre": "Délai (j ouvrés)", "sla_cible": "Délai cible (j ouvrés)",
     "dans_sla": "Dans le délai cible", "anciennete_ouvree": "Ancienneté (j ouvrés)",
     "en_retard": "En retard", "aum_gagne": "Encours remporté (M€)",
-    "jours_attente": "Jours d'attente", "jours_chez_nous": "Jours chez nous",
+    "jours_attente": "Jours d’attente", "jours_chez_nous": "Jours chez nous",
 }
 
 
 def _dossiers(table: pd.DataFrame, colonnes: list[str] | None = None) -> list[dict[str, Any]]:
-    """Lignes de dossiers sérialisées, l'identifiant étant l'index de la table
+    """Lignes de dossiers sérialisées, l’identifiant étant l’index de la table
     enrichie (stable tant que la source ne change pas)."""
     if table.empty:
         return []
@@ -188,7 +188,7 @@ def _dossiers(table: pd.DataFrame, colonnes: list[str] | None = None) -> list[di
 
 
 # =============================================================================
-#  PÉRIMÈTRE — des paramètres d'URL aux filtres du moteur
+#  PÉRIMÈTRE — des paramètres d’URL aux filtres du moteur
 # =============================================================================
 PERIODES_GLISSANTES = {"12m": 12, "24m": 24, "36m": 36}
 
@@ -202,12 +202,14 @@ def _periodes_disponibles() -> list[dict[str, str]]:
     if ETAT.df.empty:
         return []
     d_min, d_max = _bornes_donnees()
-    annees = list(range(d_max.year, max(d_min.year, d_max.year - 5) - 1, -1))
+    # Trois exercices dans la barre : au-delà, la barre déborde sur deux lignes
+    # et le champ de commande sait lire « 2021 » comme n’importe quelle année.
+    annees = list(range(d_max.year, max(d_min.year, d_max.year - 2) - 1, -1))
     return ([{"cle": "12m", "libelle": "12 derniers mois"},
              {"cle": "24m", "libelle": "24 derniers mois"},
              {"cle": "36m", "libelle": "36 derniers mois"}]
             + [{"cle": str(a), "libelle": f"Exercice {a}"} for a in annees]
-            + [{"cle": "tout", "libelle": "Tout l'historique"}])
+            + [{"cle": "tout", "libelle": "Tout l’historique"}])
 
 
 def _bornes_periode(cle: str, date_min: str | None, date_max: str | None
@@ -336,6 +338,30 @@ def _carnet(sel: pd.DataFrame, n_lignes: int) -> dict[str, Any]:
     }
 
 
+def _repere_historique() -> dict[str, Any]:
+    """Les mêmes grandeurs sur TOUT l’historique : ce à quoi se compare le
+    périmètre courant. Calculé une fois par version de la source."""
+    global _REPERE
+    if _REPERE.get("version") == ETAT.version:
+        return _REPERE["valeurs"]
+    df = ETAT.df
+    taux, gagnes, tranches, _ = core.taux_succes_rfp(df)
+    valeurs = {
+        "questionnaires": int(len(df)),
+        "rfp": core.nb_famille(df, core.FAMILLE_RFP),
+        "dd": core.nb_famille(df, core.FAMILLE_DD),
+        "taux_succes": taux, "gagnes": gagnes, "tranches": tranches,
+        "encours_remporte": core.aum_gagne(df),
+        "annee_min": int(df["date_reception"].min().year) if len(df) else None,
+        "annee_max": int(df["date_reception"].max().year) if len(df) else None,
+    }
+    _REPERE = {"version": ETAT.version, "valeurs": valeurs}
+    return valeurs
+
+
+_REPERE: dict[str, Any] = {}
+
+
 @app.get("/api/analyse")
 def analyse(request: Request,
             granularite: str | None = Query(default=None),
@@ -387,6 +413,16 @@ def analyse(request: Request,
             "mix_types": {str(k): int(v) for k, v in core.repartition_type(sel).items()},
             "date_min_donnees": sel["date_reception"].min() if len(sel) else None,
             "date_max_donnees": sel["date_reception"].max() if len(sel) else None,
+            # Tout ce que l’écran affiche est calculé ici : il ne déduit ni
+            # série, ni facteur d’échelle, ni identité par soustraction.
+            "identites": core.identites_carnet(sel),
+            "echelle": core.echelle_decomposition(sel),
+            "series": {
+                "questionnaires": core.serie_mensuelle(sel, None, 12),
+                "rfp": core.serie_mensuelle(sel, sel["est_rfp"], 12),
+                "dd": core.serie_mensuelle(sel, sel["est_dd"], 12),
+            },
+            "repere": _repere_historique(),
         } if not a.vide else None,
         "sections": [{"cle": c, "libelle": l} for c, l in a.sections],
         "blocs": blocs,
@@ -548,7 +584,7 @@ async def activer(request: Request) -> JSONResponse:
     onglet = corps.get("onglet") or None
     colonnes = {str(k): str(v) for k, v in (corps.get("colonnes") or {}).items() if v}
     branchement = core.Branchement(fichier=fichier, onglet=onglet, colonnes=colonnes, actif=True)
-    # On valide AVANT d'écrire : un branchement qui casse n'est jamais enregistré.
+    # On valide AVANT d’écrire : un branchement qui casse n’est jamais enregistré.
     try:
         df, rapport_charge = core.load_data(path=str(branchement.chemin), sheet=onglet,
                                             correspondance=colonnes)
@@ -578,7 +614,7 @@ def revenir_demo() -> JSONResponse:
 
 @app.post("/api/donnees/reprendre")
 def reprendre_fichier() -> JSONResponse:
-    """Repasse en mode automatique : classeur branché s'il existe."""
+    """Repasse en mode automatique : classeur branché s’il existe."""
     core.USE_FAKE_DATA = None
     b = core.lire_branchement()
     if b is not None and not b.actif:
@@ -596,6 +632,18 @@ def plotly_js() -> Response:
     import export
     return Response(content=export.bibliotheque_plotly(), media_type="application/javascript",
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/jetons.css")
+def jetons_css() -> Response:
+    """Les polices et les jetons du thème, émis par core.py.
+
+    L’écran et le rapport lisent le même bloc : une couleur ne peut pas
+    diverger entre les deux surfaces.
+    """
+    css = core.police_css() + core.jetons_css(":root")
+    return Response(content=css, media_type="text/css; charset=utf-8",
+                    headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/")

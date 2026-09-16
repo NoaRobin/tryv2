@@ -1,10 +1,10 @@
 # =============================================================================
-#  core.py — Moteur de données et d'analyse « RFP & Due Diligence »
+#  core.py — Moteur de données et d’analyse « RFP & Due Diligence »
 # -----------------------------------------------------------------------------
-#  RÈGLE D'ARCHITECTURE : ce fichier n'importe JAMAIS Streamlit.
+#  RÈGLE D’ARCHITECTURE : ce fichier n’importe JAMAIS Streamlit.
 #  Il ne fait que : charger → normaliser → enrichir → filtrer → calculer →
 #  construire les figures Plotly. Il est donc testable et réutilisable seul
-#  (notebook, script, API) et partagé à l'identique par app.py et export.py.
+#  (notebook, script, API) et partagé à l’identique par app.py et export.py.
 # =============================================================================
 from __future__ import annotations
 
@@ -31,21 +31,21 @@ _PANDAS_2 = int(pd.__version__.split(".")[0]) >= 2
 #  [BRANCHEMENT PRINCIPAL] — TOUT CE QUI SE PARAMÈTRE TIENT DANS CE BLOC
 #  Brancher le produit sur les vraies données ne demande AUCUNE modification de
 #  ce fichier : déposer le classeur dans le dossier data/ (ou le déposer depuis
-#  l'écran « Données » de l'application), qui écrit data/branchement.json —
+#  l’écran « Données » de l’application), qui écrit data/branchement.json —
 #  fichier, onglet, correspondance des colonnes. Voir plus bas la section
 #  « BRANCHEMENT DES DONNÉES ».
 #
 #  Ce qui suit règle la LECTURE : les noms de colonnes attendus et leurs
 #  synonymes, le vocabulaire des statuts et des types, les seuils métier.
 #  Les colonnes absentes du fichier sont neutralisées : les analyses concernées
-#  disparaissent, l'application ne casse pas.
+#  disparaissent, l’application ne casse pas.
 # =============================================================================
 
-# Données de démonstration : None = automatique (le classeur branché s'il
+# Données de démonstration : None = automatique (le classeur branché s’il
 # existe, la démonstration sinon) ; True = toujours la démonstration ;
-# False = jamais (erreur explicite si aucun classeur n'est branché).
+# False = jamais (erreur explicite si aucun classeur n’est branché).
 USE_FAKE_DATA: bool | None = None
-DATA_PATH = "données.xlsx"    # chemin par défaut si aucun branchement n'est écrit
+DATA_PATH = "données.xlsx"    # chemin par défaut si aucun branchement n’est écrit
 SHEET_NAME = None             # onglet par défaut : le premier du classeur
 
 COLUMN_MAP = {
@@ -66,17 +66,17 @@ COLUMN_MAP = {
     "nb_questions": "Nombre_Questions",
     "part_esg": "Part_ESG",               # part ESG du questionnaire, en % ou en tranche
     "langue": "Langue",
-    "montant_potentiel": "Montant_EUR",   # encours en jeu ; devient l'AUM gagné si Gagné
+    "montant_potentiel": "Montant_EUR",   # encours en jeu ; devient l’AUM gagné si Gagné
 }
 
 # [BRANCHEMENT] Intitulés alternatifs tolérés pour chaque champ, en plus de
 # COLUMN_MAP. Sert quand le classeur reçu ne porte pas exactement les mêmes
-# en-têtes : inutile de modifier COLUMN_MAP, il suffit d'ajouter l'intitulé ici.
+# en-têtes : inutile de modifier COLUMN_MAP, il suffit d’ajouter l’intitulé ici.
 # La comparaison ignore casse, accents, espaces, tirets et underscores.
 COLUMN_ALIASES: dict[str, list[str]] = {
     "date_reception": ["date de reception", "date réception", "date de réception",
-                       "date demande", "date d'arrivee", "received date", "date in"],
-    "date_envoi": ["date de envoi", "date d'envoi", "date reponse", "date de réponse",
+                       "date demande", "date d’arrivee", "received date", "date in"],
+    "date_envoi": ["date de envoi", "date d’envoi", "date reponse", "date de réponse",
                    "date rendu", "sent date", "date out"],
     "type_demande": ["type de demande", "type demande", "nature de la demande",
                      "nature", "request type", "categorie"],
@@ -84,11 +84,11 @@ COLUMN_ALIASES: dict[str, list[str]] = {
     "type_client": ["type de client", "segment client", "segment", "canal", "client type"],
     "pays": ["pays du client", "country", "juridiction", "zone"],
     "fonds": ["fonds", "nom du fonds", "strategie", "stratégie", "fund", "produit"],
-    "classe_actifs": ["classe d'actifs", "classe actifs", "asset class", "classe"],
+    "classe_actifs": ["classe d’actifs", "classe actifs", "asset class", "classe"],
     "statut": ["statut", "statut du dossier", "etat", "état", "etat du dossier",
-               "etat d'avancement", "avancement", "status", "issue", "resultat", "résultat",
+               "etat d’avancement", "avancement", "status", "issue", "resultat", "résultat",
                "result", "outcome", "decision", "décision", "stage", "phase"],
-    "analyste": ["analyste", "nom de l'analyste", "responsable", "redacteur",
+    "analyste": ["analyste", "nom de l’analyste", "responsable", "redacteur",
                  "rédacteur", "owner", "assigne a"],
     "nb_questions": ["nombre de questions", "nb questions", "questions", "volume questions",
                      "number of questions"],
@@ -96,7 +96,7 @@ COLUMN_ALIASES: dict[str, list[str]] = {
     "montant_potentiel": ["montant", "montant eur", "montant potentiel", "encours",
                           "encours potentiel", "aum", "ticket", "amount"],
     "consultant": ["consultant", "cabinet", "conseil", "intermediaire", "gatekeeper"],
-    "sous_classe_actifs": ["sous classe d'actifs", "sous classe actifs", "sous categorie",
+    "sous_classe_actifs": ["sous classe d’actifs", "sous classe actifs", "sous categorie",
                            "sub asset class", "subassetclass", "strategie detaillee"],
     "forme_juridique": ["forme juridique", "vehicule", "structure", "legal form",
                         "legalform", "wrapper"],
@@ -138,7 +138,7 @@ TYPE_NORMALIZATION = {
     "rfp": "RFP",
     "r.f.p": "RFP",
     "request for proposal": "RFP",
-    "appel d'offres": "RFP",
+    "appel d’offres": "RFP",
     "rfi": "RFI",
     "r.f.i": "RFI",
     "request for information": "RFI",
@@ -175,14 +175,14 @@ LANGUE_NORMALIZATION = {
 # Valeur attribuée à une modalité inconnue (elle reste visible, jamais supprimée)
 VALEUR_INCONNUE = "Non renseigné"
 
-# [BRANCHEMENT] La manager raisonne en DEUX familles : les RFP d'un côté, tout
-# le reste de la due diligence de l'autre. Le type fin (RFP / RFI / DDQ) reste
-# disponible pour l'analyse détaillée ; la famille pilote les écrans.
+# [BRANCHEMENT] La manager raisonne en DEUX familles : les RFP d’un côté, tout
+# le reste de la due diligence de l’autre. Le type fin (RFP / RFI / DDQ) reste
+# disponible pour l’analyse détaillée ; la famille pilote les écrans.
 FAMILLE_RFP, FAMILLE_DD = "RFP", "Due Diligence"
 FAMILLE_PAR_TYPE = {"RFP": FAMILLE_RFP, "RFI": FAMILLE_DD, "DDQ": FAMILLE_DD}
 FAMILLE_ORDER = [FAMILLE_DD, FAMILLE_RFP]
 
-# Résultat commercial d'un RFP, vocabulaire du pilotage (Won / Lost / Pending / N/A).
+# Résultat commercial d’un RFP, vocabulaire du pilotage (Won / Lost / Pending / N/A).
 RESULTAT_GAGNE, RESULTAT_PERDU = "Gagné", "Perdu"
 RESULTAT_ATTENTE, RESULTAT_SANS_SUITE = "En attente", "Sans suite"
 RESULTAT_HORS_RFP = "Sans objet"      # une due diligence ne se gagne pas
@@ -197,7 +197,7 @@ ESG_SEUIL_FORT = 0.75            # [BRANCHEMENT] seuil « questionnaire à forte
 # [BRANCHEMENT] Horizons de croissance suivis au comité (en années).
 HORIZONS_CROISSANCE = (3, 5, 10)
 
-# Ordre métier des statuts (pipeline), utilisé partout dans l'interface
+# Ordre métier des statuts (pipeline), utilisé partout dans l’interface
 STATUT_EN_COURS, STATUT_ENVOYE = "En cours", "Envoyé"
 STATUT_GAGNE, STATUT_PERDU, STATUT_ABANDONNE = "Gagné", "Perdu", "Abandonné"
 STATUT_ORDER = [STATUT_EN_COURS, STATUT_ENVOYE, STATUT_GAGNE, STATUT_PERDU, STATUT_ABANDONNE]
@@ -210,7 +210,7 @@ SLA_JOURS_OUVRES = {"RFP": 15, "RFI": 8, "DDQ": 12}
 SLA_DEFAUT = 12
 
 # [BRANCHEMENT] Nombre de mandats détaillés dans la table « Mandats remportés »
-# de la vue d'ensemble ; au-delà, le reste est agrégé (le total reste exact).
+# de la vue d’ensemble ; au-delà, le reste est agrégé (le total reste exact).
 TOP_MANDATS = 15
 
 # [BRANCHEMENT] Horizon de projection de la tendance (mois)
@@ -218,30 +218,30 @@ PROJECTION_MOIS = 6
 # [BRANCHEMENT] Seuil de significativité statistique
 ALPHA = 0.05
 
-# [BRANCHEMENT] Données synthétiques : profondeur d'historique et graine
+# [BRANCHEMENT] Données synthétiques : profondeur d’historique et graine
 FAKE_MOIS_HISTORIQUE = 36
 FAKE_SEED = 20260914
 FAKE_VOLUME_MENSUEL_BASE = 38
 
 # Avertissement affiché sous les indicateurs : les décisions clients arrivent
-# plusieurs mois après l'envoi, donc les périodes récentes sont mécaniquement
+# plusieurs mois après l’envoi, donc les périodes récentes sont mécaniquement
 # riches en dossiers non tranchés (censure à droite). Ne jamais lire un taux de
 # succès récent comme un taux définitif.
-NOTE_CENSURE = ("Les clients tranchent plusieurs mois après l'envoi de la réponse : sur une "
-                "période récente, le taux de succès et l'encours remporté sont mécaniquement "
-                "sous-évalués, et l'encours en jeu surévalué.")
+NOTE_CENSURE = ("Les clients tranchent plusieurs mois après l’envoi de la réponse : sur une "
+                "période récente, le taux de succès et l’encours remporté sont mécaniquement "
+                "sous-évalués, et l’encours en jeu surévalué.")
 
 # Dimensions filtrables : clé interne -> libellé affiché (pilote la barre latérale)
-# Dimensions filtrables : clé interne -> libellé affiché. L'ordre est celui de
+# Dimensions filtrables : clé interne -> libellé affiché. L’ordre est celui de
 # la barre de filtres ; les six premières sont les filtres de premier niveau.
 DIMENSIONS: dict[str, str] = {
     "famille": "Famille",
     "resultat": "Résultat RFP",
     "pays": "Pays",
-    "classe_actifs": "Classe d'actifs",
+    "classe_actifs": "Classe d’actifs",
     "client": "Client",
     "expertise": "Expertise",
-    "sous_classe_actifs": "Sous-classe d'actifs",
+    "sous_classe_actifs": "Sous-classe d’actifs",
     "consultant": "Consultant",
     "forme_juridique": "Forme juridique",
     "fonds": "Fonds de référence",
@@ -260,9 +260,9 @@ DIMENSIONS_PRINCIPALES = ("famille", "resultat", "pays", "classe_actifs",
 # =============================================================================
 #  [MARQUE] — une couleur, ses tons
 # -----------------------------------------------------------------------------
-#  Une seule teinte : le bleu Rothschild & Co. Toute autre couleur, à l'écran
+#  Une seule teinte : le bleu Rothschild & Co. Toute autre couleur, à l’écran
 #  comme dans le rapport, est un mélange de ce bleu et du blanc (`teinte`).
-#  Ni or, ni vert / rouge, ni palette catégorielle : un état s'écrit en toutes
+#  Ni or, ni vert / rouge, ni palette catégorielle : un état s’écrit en toutes
 #  lettres, il ne se colore pas. Les séries se distinguent par le ton, le
 #  contour et le libellé direct.
 #
@@ -273,7 +273,7 @@ DIMENSIONS_PRINCIPALES = ("famille", "resultat", "pays", "classe_actifs",
 #  prend la couleur du texte) : logo.svg (emblème aux cinq flèches et logotype,
 #  horizontal), embleme.svg (les flèches seules), logo-empile.svg (vertical,
 #  pour une couverture). Pour installer le fichier officiel de la charte,
-#  déposer le SVG sous ces noms : rien d'autre à modifier.
+#  déposer le SVG sous ces noms : rien d’autre à modifier.
 # =============================================================================
 MARQUE_NOM = "Rothschild & Co"
 MARQUE_ACTIVITE = "Asset Management"
@@ -302,8 +302,8 @@ def melanger(a: str, b: str, t: float) -> str:
 def teinte(t: float) -> str:
     """Le bleu de la maison à `t` (1 = plein, 0 = blanc), mélangé au blanc.
 
-    C'est la seule fabrique de couleur du produit : ce qui n'en sort pas n'a pas
-    sa place à l'écran.
+    C’est la seule fabrique de couleur du produit : ce qui n’en sort pas n’a pas
+    sa place à l’écran.
     """
     return melanger(MARQUE_BLANC, MARQUE_BLEU, t)
 
@@ -312,7 +312,7 @@ def teinte(t: float) -> str:
 # se compose avec ces huit valeurs.
 TONS: tuple[int, ...] = (3, 6, 12, 22, 36, 52, 72, 100)
 
-# Tons des cinq états d'un appel d'offres : du plus soutenu (remporté) au plus
+# Tons des cinq états d’un appel d’offres : du plus soutenu (remporté) au plus
 # effacé (sans suite). Toujours accompagnés du libellé et de la valeur.
 TONS_ETAT: dict[str, float] = {
     "gagnes": 1.00, "en_attente": 0.66, "en_cours": 0.44, "perdus": 0.26, "sans_suite": 0.14,
@@ -323,7 +323,7 @@ TONS_ETAT: dict[str, float] = {
 #  IDENTITÉ VISUELLE — un thème, dérivé de la teinte
 # -----------------------------------------------------------------------------
 #  Fond blanc, encre bleue, tout le reste en tons du bleu. Le thème est unique :
-#  l'écran et le rapport le partagent, il n'y a rien à basculer.
+#  l’écran et le rapport le partagent, il n’y a rien à basculer.
 # =============================================================================
 FONT_STACK = ('"InterVariable", "Inter", system-ui, -apple-system, "Segoe UI", '
               'Roboto, "Helvetica Neue", Arial, sans-serif')
@@ -343,7 +343,7 @@ THEMES: dict[str, dict[str, Any]] = {
         BORDER=teinte(0.12),
         VOILE="rgba(255,255,255,0.94)",
         ACCENT=MARQUE_BLEU,
-        # Séries : tons décroissants. La première est l'encre pleine ; la
+        # Séries : tons décroissants. La première est l’encre pleine ; la
         # deuxième et la troisième portent les séries secondaires. Au-delà de
         # quatre séries, un graphique monochrome se lit par ses libellés.
         SERIES=[teinte(1.0), teinte(0.62), teinte(0.34), teinte(0.18),
@@ -362,7 +362,7 @@ PLANE = SURFACE = ELEVATION = INK = INK_2 = INK_MUTED = ""
 GRID = AXIS = BORDER = VOILE = ACCENT = ""
 RAYON = "2px"
 SUR_ACCENT = MARQUE_BLANC   # encre posée SUR un aplat de bleu
-# Couleurs « d'état » : des tons du bleu, jamais du vert ou du rouge. Les noms
+# Couleurs « d’état » : des tons du bleu, jamais du vert ou du rouge. Les noms
 # historiques sont conservés pour les fonctions de tracé.
 STATUS_GOOD = STATUS_WARNING = STATUS_SERIOUS = STATUS_CRITICAL = ""
 TEXTE_BON = TEXTE_MAUVAIS = ""
@@ -380,9 +380,9 @@ CLIENT_TYPE_COLORS: dict[str, str] = {}
 # -----------------------------------------------------------------------------
 #  Espacement, échelle typographique, rayons, profondeur et mouvement sont
 #  définis ICI et émis en variables CSS. app.py et export.py consomment les
-#  mêmes jetons : l'écran et le rapport ne peuvent pas diverger d'un pixel.
+#  mêmes jetons : l’écran et le rapport ne peuvent pas diverger d’un pixel.
 # =============================================================================
-# Échelle d'espacement, multiples de 4 et 8 — aucune valeur en dur ailleurs.
+# Échelle d’espacement, multiples de 4 et 8 — aucune valeur en dur ailleurs.
 ESPACEMENT = {"1": "4px", "2": "8px", "3": "12px", "4": "16px", "5": "24px",
               "6": "32px", "7": "48px", "8": "64px", "9": "96px"}
 
@@ -402,7 +402,7 @@ MOTION = {
 
 def jetons_css(selecteur: str = ":root") -> str:
     """Tous les jetons du thème, en variables CSS : couleurs (une teinte et ses
-    tons), espacement, typographie, mouvement. L'écran et le rapport lisent
+    tons), espacement, typographie, mouvement. L’écran et le rapport lisent
     exactement le même bloc."""
     jetons = {
         "bleu": MARQUE_BLEU, "blanc": MARQUE_BLANC,
@@ -437,12 +437,12 @@ def jetons_css(selecteur: str = ":root") -> str:
 
 
 def chrome_plotly() -> dict[str, Any]:
-    """Couleurs de CHROME d'une figure — grille, axes, encre, infobulle.
+    """Couleurs de CHROME d’une figure — grille, axes, encre, infobulle.
 
-    Les marques n'y figurent pas : la palette de séries passe les contrôles sur
-    les deux surfaces (bleu de nuit et ivoire), elle n'a donc pas à changer. Ce
+    Les marques n’y figurent pas : la palette de séries passe les contrôles sur
+    les deux surfaces (bleu de nuit et ivoire), elle n’a donc pas à changer. Ce
     dictionnaire est ce que le rapport applique en `Plotly.relayout` quand on
-    bascule l'apparence.
+    bascule l’apparence.
     """
     return {
         "font.color": INK_2,
@@ -458,7 +458,7 @@ def chrome_plotly() -> dict[str, Any]:
 
 
 def _luminance(couleur: str) -> float:
-    """Luminance relative WCAG d'une couleur hexadécimale."""
+    """Luminance relative WCAG d’une couleur hexadécimale."""
     h = couleur.lstrip("#")
     canaux = []
     for i in (0, 2, 4):
@@ -470,7 +470,7 @@ def _luminance(couleur: str) -> float:
 def encre_lisible(fond: str) -> str:
     """Encre à poser sur un aplat : celle des deux qui contraste le plus.
     Indispensable pour les valeurs écrites dans une cellule de carte de chaleur
-    ou dans un segment d'entonnoir, dont la couleur varie avec la donnée."""
+    ou dans un segment d’entonnoir, dont la couleur varie avec la donnée."""
     clair, sombre = "#ffffff", "#0d1014"
     lum = _luminance(fond)
     contraste_clair = 1.05 / (lum + 0.05)
@@ -488,8 +488,8 @@ def couleur_rampe(rampe: Sequence[str], t: float) -> str:
 def appliquer_theme(nom: str = THEME_DEFAUT) -> None:
     """Renseigne tous les jetons de couleur et enregistre le gabarit Plotly.
 
-    Il n'existe qu'un thème ; la fonction reste le seul point d'entrée, pour
-    que rien d'autre ne fabrique une couleur.
+    Il n’existe qu’un thème ; la fonction reste le seul point d’entrée, pour
+    que rien d’autre ne fabrique une couleur.
     """
     global THEME, PLANE, SURFACE, ELEVATION, INK, INK_2, INK_MUTED, GRID, AXIS
     global BORDER, VOILE, ACCENT, SERIES, SEQUENTIEL, ORDINAL, RAYON, SUR_ACCENT
@@ -511,7 +511,7 @@ def appliquer_theme(nom: str = THEME_DEFAUT) -> None:
     SEQUENTIEL = list(jetons["SEQUENTIEL"])
     ORDINAL = list(jetons["ORDINAL"])
 
-    # Les cinq états d'un appel d'offres, par ton. Le libellé et la valeur
+    # Les cinq états d’un appel d’offres, par ton. Le libellé et la valeur
     # accompagnent toujours la marque : le ton aide, il ne porte pas seul.
     COMPARTIMENT_COLORS = {cle: teinte(t) for cle, t in TONS_ETAT.items()}
     STATUT_COLORS = {
@@ -580,9 +580,9 @@ appliquer_theme(THEME_DEFAUT)
 # =============================================================================
 #  RESSOURCES EMBARQUÉES — marque et polices
 # -----------------------------------------------------------------------------
-#  Tout est servi depuis assets/ et jamais depuis un CDN : l'écran comme le
+#  Tout est servi depuis assets/ et jamais depuis un CDN : l’écran comme le
 #  rapport fonctionnent sur un poste sans accès réseau. Si un fichier manque,
-#  la fonction renvoie une valeur vide : l'interface perd sa marque ou sa
+#  la fonction renvoie une valeur vide : l’interface perd sa marque ou sa
 #  police, jamais son contenu.
 # =============================================================================
 DOSSIER_ASSETS = Path(__file__).resolve().parent / "assets"
@@ -609,7 +609,7 @@ def logo_svg(variante: str = "horizontal") -> str:
 
     `variante` : "horizontal" (emblème + logotype), "embleme" (les cinq flèches
     seules), "empile" (vertical, pour une couverture). Vide si le fichier
-    manque : l'interface retombe sur le libellé typographique.
+    manque : l’interface retombe sur le libellé typographique.
     """
     nom = {"horizontal": MARQUE_LOGO, "embleme": MARQUE_EMBLEME,
            "empile": MARQUE_LOGO_EMPILE}.get(variante, MARQUE_LOGO)
@@ -621,7 +621,7 @@ def police_css() -> str:
 
     Inter (interface) et EB Garamond (la voix de la marque : logotype, grands
     chiffres) sont sous licence SIL OFL — voir assets/*-LICENSE.txt. Les
-    embarquer est autorisé, et c'est la seule façon d'obtenir la même
+    embarquer est autorisé, et c’est la seule façon d’obtenir la même
     typographie hors ligne comme dans un rapport transmis par courriel.
     """
     regles = []
@@ -648,7 +648,7 @@ PLOT_CONFIG = {
 #  FORMATAGE FRANÇAIS  (espace fine insécable en séparateur de milliers)
 # =============================================================================
 # Typographie française : espace insécable comme séparateur de milliers et
-# devant une unité. L'espace FINE insécable (U+202F) serait la forme la plus
+# devant une unité. L’espace FINE insécable (U+202F) serait la forme la plus
 # juste, mais elle mesure moins de deux pixels dans un texte courant : à la
 # lecture, « 1 835 » redevient « 1835 ». La lisibilité prime.
 NBSP = " "
@@ -690,7 +690,7 @@ def fmt_eur(x: Any, court: bool = True) -> str:
 
 
 def fmt_compact(x: Any) -> str:
-    """Format court pour les graduations d'axe : 12 k, 1,3 M, 4,2 Md."""
+    """Format court pour les graduations d’axe : 12 k, 1,3 M, 4,2 Md."""
     if x is None or (isinstance(x, float) and not math.isfinite(x)) or pd.isna(x):
         return "—"
     x = float(x)
@@ -773,7 +773,7 @@ def fmt_date(d: Any) -> str:
 #  BOÎTE À OUTILS STATISTIQUE
 #  Implémentée à la main (bêta incomplète régularisée) pour éviter SciPy :
 #  une dépendance de 60 Mo pour trois p-values ne se justifie pas.
-#  Validée contre les tables de Student dans le bloc d'auto-test en bas de
+#  Validée contre les tables de Student dans le bloc d’auto-test en bas de
 #  fichier (`python core.py`).
 # =============================================================================
 def _betacf(a: float, b: float, x: float) -> float:
@@ -862,7 +862,7 @@ def z_ppf(p: float) -> float:
 
 def wilson_ci(succes: int, total: int, niveau: float = 0.95) -> tuple[float, float]:
     """Intervalle de confiance de Wilson : robuste aux petits effectifs,
-    contrairement à l'intervalle normal qui déborde de [0, 1]."""
+    contrairement à l’intervalle normal qui déborde de [0, 1]."""
     if total <= 0:
         return (float("nan"), float("nan"))
     z = z_ppf(0.5 + niveau / 2.0)
@@ -975,8 +975,8 @@ class MultiOLSResult:
 
 def ols_multiple(X: pd.DataFrame, y: pd.Series, cible: str = "y") -> MultiOLSResult | None:
     """Régression multiple (matrice de conception + constante) avec t et p par
-    coefficient. numpy.linalg.lstsq + variance sigma²·(XᵀX)⁻¹ : c'est tout ce
-    qu'exige une analyse de facteurs explicatifs honnête."""
+    coefficient. numpy.linalg.lstsq + variance sigma²·(XᵀX)⁻¹ : c’est tout ce
+    qu’exige une analyse de facteurs explicatifs honnête."""
     data = X.copy()
     data["__y__"] = y.to_numpy()
     data = data.replace([np.inf, -np.inf], np.nan).dropna()
@@ -1017,9 +1017,9 @@ def ols_multiple(X: pd.DataFrame, y: pd.Series, cible: str = "y") -> MultiOLSRes
 #  GÉNÉRATEUR DE DONNÉES SYNTHÉTIQUES
 # -----------------------------------------------------------------------------
 #  DONNÉES DE DÉMONSTRATION — jamais présentées comme réelles : la source est
-#  libellée « Données synthétiques » partout dans l'interface et dans le rapport.
+#  libellée « Données synthétiques » partout dans l’interface et dans le rapport.
 #
-#  Leur forme reproduit celle d'un pôle RFP réel : la due diligence croît
+#  Leur forme reproduit celle d’un pôle RFP réel : la due diligence croît
 #  fortement sur dix ans pendant que le nombre de RFP reste stable, la charge
 #  chute en août, les délais suivent le volume de questions, et les encours
 #  gagnés sont très concentrés sur quelques mandats.
@@ -1031,9 +1031,9 @@ def ols_multiple(X: pd.DataFrame, y: pd.Series, cible: str = "y") -> MultiOLSRes
 # =============================================================================
 
 # [BRANCHEMENT] Volumes annuels de la démonstration : (due diligence, RFP).
-# Ces valeurs donnent à la fixture la trajectoire d'un pôle qui absorbe une
+# Ces valeurs donnent à la fixture la trajectoire d’un pôle qui absorbe une
 # charge de due diligence multipliée par quatre en dix ans, à effectif RFP
-# constant. L'année en cours est calculée au prorata des jours écoulés.
+# constant. L’année en cours est calculée au prorata des jours écoulés.
 VOLUMES_ANNUELS: dict[int, tuple[int, int]] = {
     2014: (52, 26), 2015: (60, 30), 2016: (55, 22), 2017: (48, 23),
     2018: (92, 20), 2019: (88, 19), 2020: (72, 21), 2021: (115, 17),
@@ -1041,9 +1041,9 @@ VOLUMES_ANNUELS: dict[int, tuple[int, int]] = {
     2026: (175, 32),
 }
 
-# [BRANCHEMENT] Encours gagnés par année, en millions d'euros. La collecte issue
+# [BRANCHEMENT] Encours gagnés par année, en millions d’euros. La collecte issue
 # des RFP est par nature très irrégulière : un mandat remporté peut représenter
-# plusieurs fois le total d'une année ordinaire.
+# plusieurs fois le total d’une année ordinaire.
 AUM_GAGNE_ANNUEL: dict[int, float] = {
     2014: 120, 2015: 260, 2016: 180, 2017: 200, 2018: 300, 2019: 100,
     2020: 100, 2021: 700, 2022: 100, 2023: 900, 2024: 400, 2025: 2100,
@@ -1096,7 +1096,7 @@ _CONSULTANTS: list[tuple[str, float]] = [
     ("Iberian Manager Selection", 0.03),
 ]
 
-# (fonds, classe d'actifs, sous-classe, expertise, forme juridique)
+# (fonds, classe d’actifs, sous-classe, expertise, forme juridique)
 # Les expertises reprennent le vocabulaire de pilotage du pôle : ce sont des
 # équipes de gestion, pas des catégories de produit.
 _FONDS: list[tuple[str, str, str, str, str]] = [
@@ -1170,8 +1170,8 @@ def _logistique(z: float) -> float:
 
 def _repartir_sur_annee(rng: np.random.Generator, total: int, annee: int,
                         aujourdhui: pd.Timestamp) -> list[pd.Timestamp]:
-    """Distribue `total` réceptions sur les jours ouvrés de l'année, en suivant
-    la saisonnalité du pôle. L'année en cours est ramenée au prorata."""
+    """Distribue `total` réceptions sur les jours ouvrés de l’année, en suivant
+    la saisonnalité du pôle. L’année en cours est ramenée au prorata."""
     debut = pd.Timestamp(year=annee, month=1, day=1)
     fin = min(pd.Timestamp(year=annee, month=12, day=31), aujourdhui)
     if fin < debut:
@@ -1221,8 +1221,8 @@ def generate_fake_data(seed: int = FAKE_SEED,
                 fonds, classe, sous_classe, expertise, forme = _FONDS[i_fonds]
                 i_analyste = int(rng.choice(len(_ANALYSTES), p=poids_analystes))
                 analyste, _, vitesse = _ANALYSTES[i_analyste]
-                # Un consultant n'intervient presque jamais sur une due diligence
-                # de routine : il pilote surtout les appels d'offres.
+                # Un consultant n’intervient presque jamais sur une due diligence
+                # de routine : il pilote surtout les appels d’offres.
                 if famille == FAMILLE_RFP or rng.random() < 0.18:
                     consultant = _CONSULTANTS[int(rng.choice(len(_CONSULTANTS),
                                                              p=poids_consultants))][0]
@@ -1245,12 +1245,12 @@ def generate_fake_data(seed: int = FAKE_SEED,
                            + {"RFP": 2.0, "RFI": 0.0, "DDQ": 1.0}[type_demande]
                            + (1.8 if langue != "Français" else 0.0))
                 delai = int(np.clip(round(rng.gamma(shape=6.0, scale=max(attendu, 1.0) / 6.0)), 1, 90))
-                if rng.random() < 0.04:            # dossiers lourds qui s'enlisent
+                if rng.random() < 0.04:            # dossiers lourds qui s’enlisent
                     delai = int(min(90, delai * rng.uniform(1.8, 3.0)))
                 envoi = pd.Timestamp(np.busday_offset(reception.date(), delai, roll="forward"))
 
                 if famille == FAMILLE_DD:
-                    # Une due diligence n'a pas de résultat commercial : elle est
+                    # Une due diligence n’a pas de résultat commercial : elle est
                     # en cours, ou envoyée. Le refus de traiter reste marginal.
                     if rng.random() < 0.012:
                         statut, envoi_final = STATUT_ABANDONNE, pd.NaT
@@ -1302,7 +1302,7 @@ def generate_fake_data(seed: int = FAKE_SEED,
 
 
 def _attribuer_encours(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
-    """Répartit l'encours gagné de chaque année sur ses RFP remportés, et donne
+    """Répartit l’encours gagné de chaque année sur ses RFP remportés, et donne
     aux RFP encore ouverts un encours potentiel du même ordre de grandeur.
 
     La collecte est très concentrée : une année se joue souvent sur un mandat.
@@ -1327,7 +1327,7 @@ def _attribuer_encours(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFra
 
 
 def _salir(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
-    """Reproduit les imperfections d'un vrai export Excel."""
+    """Reproduit les imperfections d’un vrai export Excel."""
     brut = pd.DataFrame(index=df.index)
 
     def variante(valeurs: pd.Series, table: dict[str, list[str]]) -> list[Any]:
@@ -1400,7 +1400,7 @@ class DonneesInvalides(RuntimeError):
 
 @dataclass
 class LoadReport:
-    """Journal de qualité des données, affiché tel quel dans l'application."""
+    """Journal de qualité des données, affiché tel quel dans l’application."""
     source: str = ""
     n_lignes_source: int = 0
     n_lignes_retenues: int = 0
@@ -1466,7 +1466,7 @@ def _cle(valeur: Any) -> str:
     if valeur is None or (isinstance(valeur, float) and math.isnan(valeur)):
         return ""
     texte = _strip_accents(str(valeur)).lower().strip()
-    texte = re.sub(r"[\s_\-./]+", " ", texte)
+    texte = re.sub(r"[\s_\-./'\u2019]+", " ", texte)
     return re.sub(r"\s+", " ", texte).strip()
 
 
@@ -1475,7 +1475,7 @@ def _resoudre_colonnes(colonnes: Iterable[str],
                        ) -> tuple[dict[str, str], list[str], list[str]]:
     """Associe chaque champ interne à la colonne réelle du fichier.
 
-    `forcees` : correspondance décidée par l'utilisateur (écran « Données » ou
+    `forcees` : correspondance décidée par l’utilisateur (écran « Données » ou
     data/branchement.json) ; elle prime sur la reconnaissance automatique.
     Une colonne forcée absente du fichier est ignorée, jamais inventée.
     """
@@ -1484,7 +1484,7 @@ def _resoudre_colonnes(colonnes: Iterable[str],
     for col in colonnes:
         index.setdefault(_cle(col), col)
     # Second passage, sans le contenu des parenthèses ni les unités en fin
-    # d'intitulé : « Ticket (M€) » et « Montant en EUR » se reconnaissent.
+    # d’intitulé : « Ticket (M€) » et « Montant en EUR » se reconnaissent.
     for col in colonnes:
         court = _cle(re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", str(col)))
         court = re.sub(r"\b(en|in)?\s*(m€|k€|€|eur|euros?|meur|keur|%|pct|j|jours?|days?)$", "",
@@ -1512,7 +1512,7 @@ def _resoudre_colonnes(colonnes: Iterable[str],
 
 def _vers_datetime(serie: pd.Series) -> tuple[pd.Series, int]:
     """Parse une colonne de dates hétérogène : datetime, texte jj/mm/aaaa,
-    numéro de série Excel. Retourne la série et le nombre d'échecs."""
+    numéro de série Excel. Retourne la série et le nombre d’échecs."""
     if serie.empty:
         return pd.to_datetime(serie, errors="coerce"), 0
     if pd.api.types.is_datetime64_any_dtype(serie):
@@ -1531,7 +1531,7 @@ def _vers_datetime(serie: pd.Series) -> tuple[pd.Series, int]:
     reste = ~masque_serie_excel
     if reste.any():
         try:
-            # format="mixed" n'existe qu'à partir de pandas 2.0 : sur 1.x il
+            # format="mixed" n’existe qu’à partir de pandas 2.0 : sur 1.x il
             # serait pris pour un format littéral et produirait des NaT muets.
             parse = (pd.to_datetime(brut[reste], errors="coerce", dayfirst=True, format="mixed")
                      if _PANDAS_2 else
@@ -1572,7 +1572,7 @@ def _vers_nombre(serie: pd.Series) -> pd.Series:
 
 
 def _vers_esg(serie: pd.Series) -> tuple[pd.Series, pd.Series]:
-    """Part ESG d'un questionnaire → (fraction 0-1, tranche).
+    """Part ESG d’un questionnaire → (fraction 0-1, tranche).
 
     Trois écritures coexistent dans les classeurs réels : une fraction (0,45),
     un pourcentage (« 45 % ») et une tranche saisie à la main (« > 75 % ESG »).
@@ -1628,7 +1628,7 @@ def _nettoyer_texte(serie: pd.Series) -> pd.Series:
 
 def _unifier_libelles(serie: pd.Series) -> pd.Series:
     """« BNP PARIBAS », « bnp paribas » et « BNP Paribas  » désignent le même
-    client : on retient l'orthographe la plus fréquente."""
+    client : on retient l’orthographe la plus fréquente."""
     valides = serie.dropna()
     if valides.empty:
         return serie
@@ -1665,7 +1665,7 @@ def _appliquer_normalisation(serie: pd.Series, table: Mapping[str, str],
 def normalize(brut: pd.DataFrame, source: str = "",
               correspondance: Mapping[str, str] | None = None
               ) -> tuple[pd.DataFrame, LoadReport]:
-    """Fichier brut → table canonique. Aucune ligne n'est écartée silencieusement."""
+    """Fichier brut → table canonique. Aucune ligne n’est écartée silencieusement."""
     rapport = LoadReport(source=source, n_lignes_source=len(brut))
     colonnes, absentes, ignorees = _resoudre_colonnes(list(brut.columns), correspondance)
     rapport.colonnes_absentes = absentes
@@ -1679,8 +1679,8 @@ def normalize(brut: pd.DataFrame, source: str = "",
         raise DonneesInvalides(
             f"Colonne{a} indispensable{a} introuvable{a} : {attendues}.\n"
             f"Colonnes présentes dans le fichier : {presentes}.\n"
-            f"→ Indiquer la bonne colonne dans l'écran « Données », ou ajouter "
-            f"l'intitulé à COLUMN_ALIASES en tête de core.py."
+            f"→ Indiquer la bonne colonne dans l’écran « Données », ou ajouter "
+            f"l’intitulé à COLUMN_ALIASES en tête de core.py."
         )
 
     df = pd.DataFrame(index=brut.index)
@@ -1732,10 +1732,10 @@ def normalize(brut: pd.DataFrame, source: str = "",
     rapport.lignes_sans_date = int(sans_date.sum())
     df = df.loc[~sans_date].copy()
 
-    # Incohérences chronologiques : on neutralise la date d'envoi, on journalise
+    # Incohérences chronologiques : on neutralise la date d’envoi, on journalise
     envoi_anterieur = df["date_envoi"].notna() & (df["date_envoi"] < df["date_reception"])
     if envoi_anterieur.any():
-        rapport.incoherences["date d'envoi antérieure à la réception (envoi ignoré)"] = int(envoi_anterieur.sum())
+        rapport.incoherences["date d’envoi antérieure à la réception (envoi ignoré)"] = int(envoi_anterieur.sum())
         df.loc[envoi_anterieur, "date_envoi"] = pd.NaT
 
     futur = df["date_reception"] > pd.Timestamp.today().normalize()
@@ -1779,7 +1779,7 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
     df["est_rfp"] = df["famille"].eq(FAMILLE_RFP)
     df["est_dd"] = df["famille"].eq(FAMILLE_DD)
 
-    # Le résultat commercial n'existe que pour un appel d'offres : une due
+    # Le résultat commercial n’existe que pour un appel d’offres : une due
     # diligence ne se gagne pas, elle se traite.
     correspondance = {
         STATUT_GAGNE: RESULTAT_GAGNE, STATUT_PERDU: RESULTAT_PERDU,
@@ -1806,8 +1806,8 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[ouverts, "anciennete_ouvree"] = np.maximum(np.busday_count(debut, fin), 0).astype(float)
     df["en_retard"] = (df["est_en_cours"] & (df["anciennete_ouvree"] > df["sla_cible"])).fillna(False)
 
-    # AUM gagné : l'encours d'un RFP remporté. C'est la métrique de valeur
-    # commerciale suivie au comité — un dossier perdu n'apporte aucun encours.
+    # AUM gagné : l’encours d’un RFP remporté. C’est la métrique de valeur
+    # commerciale suivie au comité — un dossier perdu n’apporte aucun encours.
     df["aum_gagne"] = np.where(df["est_gagne"] & df["est_rfp"], df["montant_potentiel"], np.nan)
     df["montant_gagne"] = df["aum_gagne"]          # nom historique, conservé
     df["esg_fort"] = df["bande_esg"].eq(ESG_FORT)
@@ -1820,11 +1820,11 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
 #  BRANCHEMENT DES DONNÉES — dossier data/ et data/branchement.json
 # -----------------------------------------------------------------------------
 #  Trois façons de brancher un classeur, de la plus simple à la plus précise :
-#    1. déposer un fichier .xlsx / .xls / .csv dans data/ : s'il est seul, il
+#    1. déposer un fichier .xlsx / .xls / .csv dans data/ : s’il est seul, il
 #       est lu automatiquement (premier onglet, colonnes reconnues par
 #       COLUMN_MAP et COLUMN_ALIASES) ;
-#    2. depuis l'application, écran « Données » : déposer le fichier, choisir
-#       l'onglet, vérifier ou corriger la correspondance des colonnes, activer ;
+#    2. depuis l’application, écran « Données » : déposer le fichier, choisir
+#       l’onglet, vérifier ou corriger la correspondance des colonnes, activer ;
 #    3. écrire data/branchement.json à la main (même contenu que 2).
 #  Les données réelles ne rejoignent jamais le dépôt : data/ est ignoré par git.
 # =============================================================================
@@ -1835,9 +1835,9 @@ EXTENSIONS_DONNEES = (".xlsx", ".xlsm", ".xls", ".csv", ".tsv", ".txt")
 
 @dataclass
 class Branchement:
-    """Ce qu'il faut savoir pour lire le classeur : où, quel onglet, quelles
+    """Ce qu’il faut savoir pour lire le classeur : où, quel onglet, quelles
     colonnes. `colonnes` : champ interne → intitulé réel, seulement pour les
-    champs que la reconnaissance automatique ne trouve pas d'elle-même."""
+    champs que la reconnaissance automatique ne trouve pas d’elle-même."""
     fichier: str | None = None
     onglet: str | None = None
     colonnes: dict[str, str] = field(default_factory=dict)
@@ -1862,7 +1862,7 @@ class Branchement:
 
 
 def lire_branchement() -> Branchement | None:
-    """Le branchement écrit sur le disque, ou None s'il n'y en a pas."""
+    """Le branchement écrit sur le disque, ou None s’il n’y en a pas."""
     try:
         return Branchement.from_dict(json.loads(FICHIER_BRANCHEMENT.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
@@ -1887,7 +1887,7 @@ def fichiers_disponibles() -> list[Path]:
 
 
 def onglets(chemin: str | Path) -> list[str]:
-    """Onglets d'un classeur ; liste vide pour un fichier texte."""
+    """Onglets d’un classeur ; liste vide pour un fichier texte."""
     chemin = Path(chemin)
     if chemin.suffix.lower() in (".csv", ".tsv", ".txt"):
         return []
@@ -1902,12 +1902,12 @@ def lire_brut(chemin: str | Path, onglet: str | None = None) -> pd.DataFrame:
     """Le fichier tel quel, sans aucune interprétation : un tableau de textes.
 
     CSV : séparateur et encodage détectés (UTF-8 avec ou sans BOM, puis
-    Latin-1). Classeur : l'onglet demandé, sinon le premier.
+    Latin-1). Classeur : l’onglet demandé, sinon le premier.
     """
     chemin = Path(chemin)
     if not chemin.exists():
         raise DonneesInvalides(f"Fichier introuvable : « {chemin} ». Déposer le classeur dans "
-                               f"le dossier data/ ou le choisir dans l'écran « Données ».")
+                               f"le dossier data/ ou le choisir dans l’écran « Données ».")
     if chemin.suffix.lower() in (".csv", ".tsv", ".txt"):
         derniere: Exception | None = None
         for encodage in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
@@ -1929,7 +1929,7 @@ def lire_brut(chemin: str | Path, onglet: str | None = None) -> pd.DataFrame:
 
 def apercu(chemin: str | Path, onglet: str | None = None,
            correspondance: Mapping[str, str] | None = None, n: int = 8) -> dict[str, Any]:
-    """Ce que l'écran « Données » montre avant d'activer : colonnes trouvées,
+    """Ce que l’écran « Données » montre avant d’activer : colonnes trouvées,
     correspondance proposée, champs indispensables manquants, premières lignes."""
     chemin = Path(chemin)
     brut = lire_brut(chemin, onglet)
@@ -1970,10 +1970,10 @@ def resoudre_source(use_fake: bool | None = None) -> tuple[str, Branchement | No
     if choix is False:
         if len(fichiers) > 1:
             raise DonneesInvalides(
-                f"{len(fichiers)} fichiers dans data/ : choisir lequel lire dans l'écran "
+                f"{len(fichiers)} fichiers dans data/ : choisir lequel lire dans l’écran "
                 f"« Données » ({', '.join(p.name for p in fichiers)}).")
         raise DonneesInvalides("Aucun classeur branché : déposer un fichier .xlsx ou .csv dans "
-                               "le dossier data/, ou le déposer depuis l'écran « Données ».")
+                               "le dossier data/, ou le déposer depuis l’écran « Données ».")
     return "demo", None
 
 
@@ -1981,10 +1981,10 @@ def load_data(path: str | None = None, sheet: str | None = None,
               use_fake: bool | None = None,
               correspondance: Mapping[str, str] | None = None
               ) -> tuple[pd.DataFrame, LoadReport]:
-    """Point d'entrée unique : renvoie la table enrichie et son journal qualité.
+    """Point d’entrée unique : renvoie la table enrichie et son journal qualité.
 
     Sans argument, la source est résolue par `resoudre_source` : le classeur
-    branché s'il existe, la démonstration sinon. `path` force un fichier.
+    branché s’il existe, la démonstration sinon. `path` force un fichier.
     """
     if path is not None:
         mode, branchement = "fichier", Branchement(fichier=path, onglet=sheet,
@@ -2079,7 +2079,7 @@ def filter_data(df: pd.DataFrame, filtres: Filters | None) -> pd.DataFrame:
 
 
 def _dispo(df: pd.DataFrame, *colonnes: str, min_modalites: int = 1) -> bool:
-    """Une analyse n'est construite que si ses colonnes portent une information
+    """Une analyse n’est construite que si ses colonnes portent une information
     réelle : colonne présente, non vide, et pas uniquement « Non renseigné »."""
     if df.empty:
         return False
@@ -2144,7 +2144,7 @@ def agg_type_mois(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def agg_dimension(df: pd.DataFrame, colonne: str, min_effectif: int = 1) -> pd.DataFrame:
-    """Tableau de bord d'une dimension : volume, conversion, délai, montants.
+    """Tableau de bord d’une dimension : volume, conversion, délai, montants.
     Alimente à la fois les graphiques et leur jumeau tableau."""
     if df.empty or colonne not in df.columns:
         return pd.DataFrame()
@@ -2197,16 +2197,16 @@ def nb_questionnaires(df: pd.DataFrame) -> int:
 
 
 def nb_famille(df: pd.DataFrame, famille: str) -> int:
-    """Nombre de questionnaires d'une famille (RFP ou Due Diligence)."""
+    """Nombre de questionnaires d’une famille (RFP ou Due Diligence)."""
     if df.empty or "famille" not in df.columns:
         return 0
     return int((df["famille"] == famille).sum())
 
 
 def compte_resultats(df: pd.DataFrame) -> pd.Series:
-    """Répartition des RFP par résultat commercial, dans l'ordre de lecture.
+    """Répartition des RFP par résultat commercial, dans l’ordre de lecture.
 
-    Les due diligences sont exclues : elles n'ont pas de résultat commercial.
+    Les due diligences sont exclues : elles n’ont pas de résultat commercial.
     """
     if df.empty or "resultat" not in df.columns:
         return pd.Series(dtype=int)
@@ -2222,7 +2222,7 @@ def taux_succes_rfp(df: pd.DataFrame) -> tuple[float, int, int, tuple[float, flo
 
     Dénominateur = RFP tranchés (gagnés + perdus). Les dossiers en attente de
     décision sont exclus, jamais comptés comme des échecs ; les dossiers sans
-    suite non plus, puisqu'ils n'ont pas été remis.
+    suite non plus, puisqu’ils n’ont pas été remis.
     """
     if df.empty or "est_rfp" not in df.columns:
         return (float("nan"), 0, 0, (float("nan"), float("nan")))
@@ -2235,7 +2235,7 @@ def taux_succes_rfp(df: pd.DataFrame) -> tuple[float, int, int, tuple[float, flo
 
 
 def aum_gagne(df: pd.DataFrame) -> float:
-    """Encours remporté : somme des montants des RFP gagnés, en millions d'euros."""
+    """Encours remporté : somme des montants des RFP gagnés, en millions d’euros."""
     if df.empty or "aum_gagne" not in df.columns:
         return 0.0
     return float(df["aum_gagne"].sum(skipna=True))
@@ -2268,8 +2268,8 @@ def delai_median(df: pd.DataFrame, famille: str | None = None,
 def cadence_mensuelle(df: pd.DataFrame, famille: str | None = None) -> float:
     """Nombre de dossiers TERMINÉS par mois, en moyenne sur les mois observés.
 
-    On compte les envois, pas les réceptions : c'est la capacité de production
-    de l'équipe, pas la charge qui lui arrive.
+    On compte les envois, pas les réceptions : c’est la capacité de production
+    de l’équipe, pas la charge qui lui arrive.
     """
     if df.empty or "date_envoi" not in df.columns:
         return float("nan")
@@ -2305,7 +2305,7 @@ class Croissance:
     volume_reference: int
     volume_base: int
     taux: float
-    complete: bool          # False si l'historique ne couvre pas l'horizon
+    complete: bool          # False si l’historique ne couvre pas l’horizon
 
     @property
     def variation_absolue(self) -> int:
@@ -2313,7 +2313,7 @@ class Croissance:
 
     @property
     def tcam(self) -> float:
-        """Taux de croissance annuel moyen, plus honnête qu'un cumul brut."""
+        """Taux de croissance annuel moyen, plus honnête qu’un cumul brut."""
         if self.volume_base <= 0 or self.horizon <= 0:
             return float("nan")
         return (self.volume_reference / self.volume_base) ** (1 / self.horizon) - 1
@@ -2324,8 +2324,8 @@ def croissance(df: pd.DataFrame, horizon: int,
     """Croissance du volume sur `horizon` années.
 
     Référence = dernière année civile COMPLÈTE ; base = cette année moins
-    l'horizon. L'année en cours est exclue : la comparer à une année pleine
-    afficherait un effondrement qui n'existe pas.
+    l’horizon. L’année en cours est exclue : la comparer à une année pleine
+    afficherait un effondrement qui n’existe pas.
     """
     if df.empty:
         return None
@@ -2378,12 +2378,12 @@ def dossiers_a_surveiller(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =============================================================================
-#  CARNET D'APPELS D'OFFRES — la photographie « où en sommes-nous »
+#  CARNET D’APPELS D’OFFRES — la photographie « où en sommes-nous »
 # -----------------------------------------------------------------------------
-#  C'est la matière de la page d'accueil. Cinq compartiments EXCLUSIFS qui
-#  couvrent la totalité des appels d'offres de la sélection : leur somme vaut le
-#  nombre de RFP, ce que l'auto-test vérifie. Aucun dossier ne disparaît entre
-#  deux colonnes, aucun n'est compté deux fois.
+#  C’est la matière de la page d’accueil. Cinq compartiments EXCLUSIFS qui
+#  couvrent la totalité des appels d’offres de la sélection : leur somme vaut le
+#  nombre de RFP, ce que l’auto-test vérifie. Aucun dossier ne disparaît entre
+#  deux colonnes, aucun n’est compté deux fois.
 # =============================================================================
 COMPARTIMENTS: tuple[tuple[str, str, str], ...] = (
     # (clé, libellé affiché, ce que le compartiment signifie vraiment)
@@ -2397,7 +2397,7 @@ COMPARTIMENTS: tuple[tuple[str, str, str], ...] = (
 
 @dataclass(frozen=True)
 class Carnet:
-    """État des appels d'offres de la sélection, à la date du jour."""
+    """État des appels d’offres de la sélection, à la date du jour."""
     compartiments: dict[str, pd.DataFrame]
     a_relancer: pd.DataFrame
     total: int
@@ -2428,11 +2428,11 @@ class Carnet:
 
 
 def carnet(df: pd.DataFrame) -> Carnet:
-    """Ventile les appels d'offres de la sélection par état commercial.
+    """Ventile les appels d’offres de la sélection par état commercial.
 
     Le statut fait foi, pas le résultat : « En cours » et « Envoyé » partagent le
-    résultat « En attente » alors qu'ils appellent deux actions différentes —
-    rédiger d'un côté, relancer de l'autre.
+    résultat « En attente » alors qu’ils appellent deux actions différentes —
+    rédiger d’un côté, relancer de l’autre.
     """
     if df.empty or "est_rfp" not in df.columns:
         vide = df.head(0)
@@ -2465,14 +2465,109 @@ def carnet(df: pd.DataFrame) -> Carnet:
         colonne = "date_envoi" if compartiments[cle]["date_envoi"].notna().any() else "date_reception"
         compartiments[cle] = compartiments[cle].sort_values(colonne, ascending=False)
 
-    return Carnet(compartiments, _horloges(dossiers_a_surveiller(df)), len(rfp))
+    # La liste de relance se lit de haut en bas : le plus pressant d’abord,
+    # que l’attente vienne du client ou de notre propre délai.
+    relances = _horloges(dossiers_a_surveiller(df))
+    if not relances.empty:
+        urgence = relances[["jours_attente", "anciennete_ouvree"]].max(axis=1)
+        relances = relances.assign(_urgence=urgence).sort_values(
+            "_urgence", ascending=False).drop(columns="_urgence")
+    return Carnet(compartiments, relances, len(rfp))
+
+
+APPEL_OFFRES = "appel d\u2019offres"
+APPELS_OFFRES = "appels d\u2019offres"
+
+
+def identites_carnet(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Ce que valent, exactement, les trois grandeurs du carnet.
+
+    Un chiffre affiché sans sa composition se croit sur parole. Chaque entrée
+    porte la grandeur, sa valeur, l’égalité qui la produit et sa réserve de
+    lecture. L’écran et le rapport les reprennent tels quels : aucune de ces
+    phrases n’est recomposée ailleurs.
+    """
+    if df.empty:
+        return []
+    livre = carnet(df)
+    taux, gagnes, tranches, ic = taux_succes_rfp(df)
+    perdus = tranches - gagnes
+    remporte, en_jeu = aum_gagne(df), aum_en_jeu(df)
+    sorties: list[dict[str, Any]] = []
+
+    redaction, attente = livre.encours("en_cours"), livre.encours("en_attente")
+    if en_jeu > 0:
+        sorties.append({
+            "cle": "en_jeu", "grandeur": "Encours en jeu", "valeur": fmt_dec(en_jeu, 0, "M€"),
+            "egalite": (f"{fmt_dec(redaction, 1, 'M€')} en rédaction "
+                        f"+ {fmt_dec(attente, 1, 'M€')} en attente de décision"),
+            "note": "Un pipeline, pas une collecte acquise.",
+        })
+    if tranches:
+        sorties.append({
+            "cle": "succes", "grandeur": "Taux de succès", "valeur": fmt_pct(taux, 1),
+            "egalite": (f"{pluriel(gagnes, 'mandat remporté', 'mandats remportés')} sur "
+                        f"{fmt_int(tranches)} dossiers tranchés ({fmt_int(gagnes)} gagnés "
+                        f"+ {fmt_int(perdus)} perdus)"),
+            "note": (f"Les {pluriel(livre.vivants, 'dossier')} non tranchés sont exclus du "
+                     f"dénominateur, jamais comptés comme des échecs. Intervalle de confiance "
+                     f"à 95 % : {fmt_pct(ic[0], 0)} à {fmt_pct(ic[1], 0)}."),
+        })
+    if gagnes and remporte > 0:
+        sorties.append({
+            "cle": "remporte", "grandeur": "Encours remporté", "valeur": fmt_dec(remporte, 0, "M€"),
+            "egalite": (f"{pluriel(gagnes, 'mandat')}, ticket moyen "
+                        f"{fmt_dec(remporte / gagnes, 0, 'M€')}"),
+            "note": "Rattaché à l’année de réception du dossier.",
+        })
+    return sorties
+
+
+def serie_mensuelle(df: pd.DataFrame, masque: pd.Series | None = None,
+                    mois: int = 12) -> list[dict[str, Any]]:
+    """Les `mois` derniers mois du périmètre, sans trou : un mois sans dossier
+    vaut zéro et le dit. Le dernier mois est signalé comme en cours s’il l’est.
+
+    Sert les petites séries de l’écran (sous un indicateur, dans la marge) :
+    elles ne sont jamais reconstituées par soustraction côté navigateur.
+    """
+    if df.empty:
+        return []
+    sous = df if masque is None else df[masque]
+    compte = (sous.assign(_m=sous["date_reception"].dt.to_period("M"))
+              .groupby("_m").size() if len(sous) else pd.Series(dtype="int64"))
+    fin = df["date_reception"].max().to_period("M")
+    debut = max(df["date_reception"].min().to_period("M"), fin - (mois - 1))
+    calendrier = pd.period_range(debut, fin, freq="M")
+    courant = pd.Timestamp.today().to_period("M")
+    return [{"mois": p.to_timestamp().strftime("%Y-%m"), "libelle": fmt_mois(p.to_timestamp()),
+             "valeur": int(compte.get(p, 0)), "en_cours": bool(p == courant)}
+            for p in calendrier]
+
+
+def echelle_decomposition(df: pd.DataFrame) -> dict[str, Any] | None:
+    """Le facteur qui sépare les appels d’offres du total reçu.
+
+    La décomposition doit montrer cinq états dont certains valent deux dossiers
+    à côté d’un total de plusieurs centaines. Le facteur est déclaré, pas caché :
+    « × 7,9 — les 25 appels d’offres portés à la hauteur des 197 reçus ».
+    """
+    total = nb_questionnaires(df)
+    n_rfp = nb_famille(df, FAMILLE_RFP)
+    if not total or not n_rfp:
+        return None
+    facteur = total / n_rfp
+    return {"facteur": facteur, "affichage": f"× {fmt_dec(facteur, 1)}", "total": total,
+            "rfp": n_rfp,
+            "phrase": (f"les {pluriel(n_rfp, APPEL_OFFRES, APPELS_OFFRES)} "
+                       f"portés à la hauteur des {fmt_int(total)} reçus")}
 
 
 def sla_libelle(par_famille: bool = False) -> str:
     """Engagement de délai en toutes lettres.
 
     Par FAMILLE pour le rapport diffusé — qui ne connaît que RFP et due
-    diligence — et par type fin pour l'écran, où le détail a sa place.
+    diligence — et par type fin pour l’écran, où le détail a sa place.
     """
     if not par_famille:
         return ", ".join(f"{t} : {j} j ouvrés" for t, j in SLA_JOURS_OUVRES.items())
@@ -2480,7 +2575,7 @@ def sla_libelle(par_famille: bool = False) -> str:
     for type_, jours in SLA_JOURS_OUVRES.items():
         par_f.setdefault(FAMILLE_PAR_TYPE.get(type_, VALEUR_INCONNUE), []).append(jours)
     morceaux = []
-    for famille in FAMILLE_ORDER[::-1]:                 # RFP d'abord, à l'écrit
+    for famille in FAMILLE_ORDER[::-1]:                 # RFP d’abord, à l’écrit
         jours = sorted(set(par_f.get(famille, [])))
         if not jours:
             continue
@@ -2492,8 +2587,8 @@ def sla_libelle(par_famille: bool = False) -> str:
 def repartition_type(df: pd.DataFrame) -> pd.Series:
     """Volume par type FIN de demande : RFP, RFI, DDQ.
 
-    Ce détail est une lecture d'écran. Le rapport, lui, ne connaît que les deux
-    familles du pilotage — c'est une décision de restitution, pas une limite de
+    Ce détail est une lecture d’écran. Le rapport, lui, ne connaît que les deux
+    familles du pilotage — c’est une décision de restitution, pas une limite de
     la donnée.
     """
     if df.empty or "type_demande" not in df.columns:
@@ -2521,7 +2616,7 @@ class Kpi:
     serie: list[float] = field(default_factory=list)   # mini-tendance
     cible: str | None = None        # page ouverte au clic (drill-down)
     groupe: str = "activite"        # activite | commercial | operations
-    # Affiché à l'écran, absent du rapport : le détail RFI / DDQ est une lecture
+    # Affiché à l’écran, absent du rapport : le détail RFI / DDQ est une lecture
     # interne ; le rapport raisonne en deux familles.
     hors_rapport: bool = False
 
@@ -2529,7 +2624,7 @@ class Kpi:
 def _delta(courant: float | None, precedent: float | None, *,
            mode: str = "relatif", n: int = 0, unite: str = "",
            sens_hausse: str = "bon") -> tuple[str, str, str]:
-    """Calcule l'affichage d'une variation et sa lecture métier."""
+    """Calcule l’affichage d’une variation et sa lecture métier."""
     if courant is None or precedent is None or pd.isna(courant) or pd.isna(precedent):
         return ("", "neutre", "plat")
     ecart = float(courant) - float(precedent)
@@ -2541,7 +2636,7 @@ def _delta(courant: float | None, precedent: float | None, *,
     elif mode == "points":
         texte = f"{'+' if ecart >= 0 else '−'}{fmt_dec(abs(ecart) * 100, 1)}{ESP_UNITE}pt"
     else:
-        if abs(ecart) < 0.5 * 10 ** (-n):        # s'arrondirait à « −0 »
+        if abs(ecart) < 0.5 * 10 ** (-n):        # s’arrondirait à « −0 »
             return ("stable", "neutre", "plat")
         texte = f"{'+' if ecart >= 0 else '−'}{fmt_dec(abs(ecart), n, unite)}"
     if abs(ecart) < 1e-12:
@@ -2558,7 +2653,7 @@ def _delta(courant: float | None, precedent: float | None, *,
 
 def _serie_mensuelle(df: pd.DataFrame, masque: pd.Series | None = None,
                      n: int = 18) -> list[float]:
-    """Derniers mois de volume, pour la mini-tendance d'une carte."""
+    """Derniers mois de volume, pour la mini-tendance d’une carte."""
     if df.empty:
         return []
     sous = df if masque is None else df[masque]
@@ -2574,7 +2669,7 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
     de même durée — la seule comparaison qui ne mente pas.
 
     Chaque indicateur porte sa définition (`aide`), sa mini-tendance (`serie`)
-    et la page qu'il ouvre au clic (`cible`).
+    et la page qu’il ouvre au clic (`cible`).
     """
     if df.empty:
         return []
@@ -2600,31 +2695,31 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                     serie=_serie_mensuelle(df), cible="activite",
                     aide="Nombre de questionnaires reçus sur la période filtrée, "
-                         "appels d'offres et due diligence confondus."))
+                         "appels d’offres et due diligence confondus."))
 
     d = _delta(n_dd, val(lambda f: nb_famille(f, FAMILLE_DD)), mode="relatif")
     kpis.append(Kpi("dd", "Due diligence", fmt_int(n_dd), float(n_dd),
                     detail=f"{fmt_dec(cadence_mensuelle(df, FAMILLE_DD), 1)} terminées par mois",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                     serie=_serie_mensuelle(df, df["est_dd"]), cible="dd",
-                    aide="Questionnaires de due diligence, quel qu'en soit le format. "
-                         "Ils n'ont pas de résultat commercial : une due diligence se "
+                    aide="Questionnaires de due diligence, quel qu’en soit le format. "
+                         "Ils n’ont pas de résultat commercial : une due diligence se "
                          "traite, elle ne se gagne pas."))
 
     d = _delta(n_rfp, val(lambda f: nb_famille(f, FAMILLE_RFP)), mode="relatif")
-    kpis.append(Kpi("rfp", "Appels d'offres", fmt_int(n_rfp), float(n_rfp),
+    kpis.append(Kpi("rfp", "Appels d’offres", fmt_int(n_rfp), float(n_rfp),
                     detail=f"{fmt_dec(cadence_mensuelle(df, FAMILLE_RFP), 1)} remis par mois",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                     serie=_serie_mensuelle(df, df["est_rfp"]), cible="rfp",
-                    aide="Appels d'offres (RFP) : les seuls dossiers porteurs d'un "
+                    aide="Appels d’offres (RFP) : les seuls dossiers porteurs d’un "
                          "résultat commercial."))
 
-    # Détail du type fin — visible à l'écran, absent du rapport diffusé.
+    # Détail du type fin — visible à l’écran, absent du rapport diffusé.
     # La due diligence recouvre deux objets distincts : le questionnaire
-    # d'information (RFI) et le questionnaire de due diligence formel (DDQ).
+    # d’information (RFI) et le questionnaire de due diligence formel (DDQ).
     # Les confondre masque un écart de charge de plus du simple au double.
     volumes = repartition_type(df)
-    libelles = {"RFI": "Demandes d'information (RFI)", "DDQ": "Due diligences (DDQ)"}
+    libelles = {"RFI": "Demandes d’information (RFI)", "DDQ": "Due diligences (DDQ)"}
     for code, libelle in libelles.items():
         if code not in volumes.index:
             continue
@@ -2640,7 +2735,7 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
                         serie=_serie_mensuelle(df, masque), cible="dd",
                         hors_rapport=True,
                         aide=f"Questionnaires de type {code} sur la période. Ce détail "
-                             f"est une lecture d'écran : le rapport diffusé raisonne en "
+                             f"est une lecture d’écran : le rapport diffusé raisonne en "
                              f"deux familles, RFP et due diligence."))
 
     # ---- Résultat commercial --------------------------------------------
@@ -2649,10 +2744,10 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
     attente = int(comptes.get(RESULTAT_ATTENTE, 0))
     d = _delta(gagnes, val(lambda f: taux_succes_rfp(f)[1]), mode="relatif")
     kpis.append(Kpi("rfp_gagnes", "Mandats remportés", fmt_int(gagnes), float(gagnes),
-                    detail=f"{pluriel(attente, 'dossier')} en attente de décision",
+                    detail=f"{pluriel(attente, 'dossier')} non tranché{accord(attente)}",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                     cible="aum", groupe="commercial",
-                    aide="Appels d'offres gagnés sur la période. " + NOTE_CENSURE))
+                    aide="Appels d’offres gagnés sur la période. " + NOTE_CENSURE))
 
     d = _delta(taux, val(lambda f: taux_succes_rfp(f)[0]), mode="points")
     kpis.append(Kpi("succes", "Taux de succès", fmt_pct(taux, 1),
@@ -2671,8 +2766,8 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
                             if gagnes else "aucun mandat remporté"),
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                     cible="aum", groupe="commercial",
-                    aide="Somme des encours des appels d'offres remportés, rattachés à "
-                         "l'année de réception du dossier. " + NOTE_CENSURE))
+                    aide="Somme des encours des appels d’offres remportés, rattachés à "
+                         "l’année de réception du dossier. " + NOTE_CENSURE))
 
     pipeline = aum_en_jeu(df)
     d = _delta(pipeline, val(aum_en_jeu), mode="relatif")
@@ -2680,7 +2775,7 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
                     detail=f"{pluriel(attente, 'dossier')} non tranché{accord(attente)}",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                     cible="rfp", groupe="commercial",
-                    aide="Encours des appels d'offres encore ouverts : le pipeline "
+                    aide="Encours des appels d’offres encore ouverts : le pipeline "
                          "commercial, à ne pas confondre avec une collecte acquise."))
 
     # ---- Capacité opérationnelle ----------------------------------------
@@ -2697,7 +2792,7 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
     delai_rfp = delai_median(df, FAMILLE_RFP)
     d = _delta(delai_rfp, val(lambda f: delai_median(f, FAMILLE_RFP)),
                mode="absolu", n=0, unite="j", sens_hausse="mauvais")
-    kpis.append(Kpi("delai_rfp", "Délai appel d'offres", fmt_dec(delai_rfp, 0, "j"),
+    kpis.append(Kpi("delai_rfp", "Délai appel d’offres", fmt_dec(delai_rfp, 0, "j"),
                     None if pd.isna(delai_rfp) else float(delai_rfp),
                     detail=f"9e décile à {fmt_dec(df.loc[df['est_rfp'], 'delai_calendaire'].quantile(0.9), 0, 'j')}",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
@@ -2726,7 +2821,7 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
 
     part_esg = part_esg_forte(df)
     d = _delta(part_esg, val(part_esg_forte), mode="points")
-    kpis.append(Kpi("esg", "Questionnaires très ESG", fmt_pct(part_esg, 0),
+    kpis.append(Kpi("esg", "Forte composante ESG", fmt_pct(part_esg, 0),
                     None if pd.isna(part_esg) else float(part_esg),
                     detail=f"part ESG supérieure à {fmt_pct(ESG_SEUIL_FORT, 0)}",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
@@ -2737,13 +2832,13 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
 
 
 # =============================================================================
-#  INSIGHTS — phrases déterministes, calculées, jamais rédigées d'avance
+#  INSIGHTS — phrases déterministes, calculées, jamais rédigées d’avance
 # =============================================================================
 @dataclass(frozen=True)
 class Insight:
     cle: str
     texte: str
-    appui: str                     # la métrique qui soutient l'affirmation
+    appui: str                     # la métrique qui soutient l’affirmation
     ton: str = "info"              # info | positif | alerte
     cible: str | None = None       # page ouverte au clic
     serie: tuple[float, ...] = ()
@@ -2751,10 +2846,10 @@ class Insight:
 
 def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                      maximum: int = 8) -> list[Insight]:
-    """Constats tirés des données, dans l'ordre de ce qui mérite attention.
+    """Constats tirés des données, dans l’ordre de ce qui mérite attention.
 
-    Aucun texte n'est écrit d'avance : chaque phrase est produite par un calcul,
-    et l'insight disparaît si la donnée ne permet pas de l'établir.
+    Aucun texte n’est écrit d’avance : chaque phrase est produite par un calcul,
+    et l’insight disparaît si la donnée ne permet pas de l’établir.
     """
     if df.empty:
         return []
@@ -2770,7 +2865,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
             f"{pluriel(len(surveiller), 'dossier')} "
                 f"{'demande' if len(surveiller) < 2 else 'demandent'} une relance : délai cible "
             f"dépassé ou décision attendue depuis plus de quatre mois.",
-            f"{fmt_dec(en_jeu, 0, 'M€')} d'encours concernés" if en_jeu else "",
+            f"{fmt_dec(en_jeu, 0, 'M€')} d’encours concernés" if en_jeu else "",
             ton="alerte", cible="explorateur"))
 
     # 2. Volume par rapport à la période précédente
@@ -2811,7 +2906,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 f"La due diligence est passée de {fmt_pct(parts.iloc[0], 0)} à "
                 f"{fmt_pct(parts.iloc[-1], 0)} de la charge entre {parts.index[0]} "
                 f"et {parts.index[-1]}.",
-                "le nombre d'appels d'offres, lui, reste stable"
+                "le nombre d’appels d’offres, lui, reste stable"
                 if annuel[FAMILLE_RFP].std() < annuel[FAMILLE_RFP].mean() * 0.35 else "",
                 ton="info", cible="activite"))
 
@@ -2822,7 +2917,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
             sens = "allongé" if actuel > avant else "raccourci"
             insights.append(Insight(
                 "delai",
-                f"Le délai médian de traitement s'est {sens} de "
+                f"Le délai médian de traitement s’est {sens} de "
                 f"{pluriel(round(abs(actuel - avant)), 'jour')} par rapport à la "
                 f"période précédente.",
                 f"{fmt_dec(actuel, 0, 'j')} contre {fmt_dec(avant, 0, 'j')}",
@@ -2833,13 +2928,17 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
     if len(attente):
         montant = float(attente["montant_potentiel"].sum(skipna=True))
         if montant > 0:
+            # « Non tranché » et non « en attente de décision » : le compte
+            # réunit les dossiers en rédaction et ceux remis au client, qui
+            # appellent deux actions différentes. Le carnet les distingue.
             insights.append(Insight(
                 "pipeline",
-                f"{fmt_int(len(attente))} appel{accord(len(attente))} d'offres en attente "
-                f"de décision {'représente' if len(attente) < 2 else 'représentent'} "
-                f"{fmt_dec(montant, 0, 'M€')} d'encours potentiel.",
+                f"{fmt_int(len(attente))} appel{accord(len(attente))} d’offres non "
+                f"tranché{accord(len(attente))} "
+                f"{'représente' if len(attente) < 2 else 'représentent'} "
+                f"{fmt_dec(montant, 0, 'M€')} d’encours potentiel.",
                 f"soit {fmt_dec(montant / max(aum_gagne(df), 1) * 100, 0, '%')} "
-                f"de l'encours déjà remporté sur la période",
+                f"de l’encours déjà remporté sur la période",
                 ton="info", cible="rfp"))
 
     # 7. Concentration client
@@ -2854,7 +2953,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 f"{fmt_int(int(comptes.iloc[0]))} dossiers",
                 ton="info", cible="explorateur"))
 
-    # 8. Mois le plus chargé de l'année en cours
+    # 8. Mois le plus chargé de l’année en cours
     annee = df["date_reception"].dt.year.max()
     courante = df[df["date_reception"].dt.year == annee]
     if len(courante) >= 12:
@@ -2885,15 +2984,15 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
 
 
 # =============================================================================
-#  BLOCS D'ANALYSE (figure + narration + jumeau tableau)
+#  BLOCS D’ANALYSE (figure + narration + jumeau tableau)
 #  Chaque bloc est autonome et renvoie None si la donnée ne le permet pas :
-#  le dashboard s'adapte au fichier, il n'impose rien.
+#  le dashboard s’adapte au fichier, il n’impose rien.
 # =============================================================================
-# Architecture de l'information : une section = une question de pilotage.
+# Architecture de l’information : une section = une question de pilotage.
 SECTIONS: dict[str, str] = {
-    "synthese": "Vue d'ensemble",
+    "synthese": "Vue d’ensemble",
     "activite": "Activité",
-    "rfp": "Pipeline RFP",
+    "rfp": "Appels d’offres",
     "dd": "Due diligence",
     "aum": "Encours & gains",
     "esg": "ESG",
@@ -2902,10 +3001,10 @@ SECTIONS: dict[str, str] = {
 
 # Le produit est en DEUX parties. La première se lit debout, en trois minutes,
 # et suffit à un dirigeant. La seconde répond aux « pourquoi » et aux
-# « combien exactement ». Cette partition vaut pour l'écran comme pour le
-# rapport : c'est la même architecture de l'information.
+# « combien exactement ». Cette partition vaut pour l’écran comme pour le
+# rapport : c’est la même architecture de l’information.
 PARTIES: dict[str, tuple[str, str]] = {
-    "direction": ("Direction", "Où en sommes-nous, et qu'est-ce qui a bougé."),
+    "direction": ("Direction", "Où en sommes-nous, et qu’est-ce qui a bougé."),
     "analyse": ("Analyse", "Le détail, dimension par dimension."),
 }
 PARTIE_PAR_SECTION: dict[str, str] = {
@@ -2927,10 +3026,10 @@ class Block:
     tableau: pd.DataFrame
     note: str = ""
     large: bool = False
-    # Dimension filtrable portée par l'axe des catégories : renseignée, elle
-    # rend le graphique cliquable — un clic sur « France » filtre tout l'écran.
+    # Dimension filtrable portée par l’axe des catégories : renseignée, elle
+    # rend le graphique cliquable — un clic sur « France » filtre tout l’écran.
     dimension: str | None = None
-    # Bloc d'écran uniquement : il ne part pas dans le rapport diffusé.
+    # Bloc d’écran uniquement : il ne part pas dans le rapport diffusé.
     hors_rapport: bool = False
 
 
@@ -2941,7 +3040,7 @@ def _fig(hauteur: int = 340, **layout: Any) -> go.Figure:
 
 
 def _marque(couleur: str | Sequence[str], largeur: float = 1.5) -> dict[str, Any]:
-    """Couleur + anneau de la couleur de fond : c'est l'écart de 2 px entre
+    """Couleur + anneau de la couleur de fond : c’est l’écart de 2 px entre
     marques adjacentes, jamais une bordure décorative."""
     return dict(color=couleur, line=dict(color=SURFACE, width=largeur))
 
@@ -2986,7 +3085,7 @@ def _labels_exterieurs(fig: go.Figure, valeurs: Sequence[float], marge: float = 
 
 def _mois_complets(mensuel: pd.DataFrame) -> pd.DataFrame:
     """Écarte le mois en cours : un mois à moitié écoulé tire toute tendance
-    vers le bas et fausserait aussi bien l'ajustement que le commentaire."""
+    vers le bas et fausserait aussi bien l’ajustement que le commentaire."""
     if mensuel.empty:
         return mensuel
     courant = pd.Timestamp.today().normalize().replace(day=1)
@@ -3001,7 +3100,7 @@ NOM_PERIODE = {"mois": "mois", "trimestre": "trimestre", "annee": "an"}
 
 
 def _periode(df: pd.DataFrame, granularite: str) -> pd.Series:
-    """Ramène la date de réception au début de sa période d'agrégation."""
+    """Ramène la date de réception au début de sa période d’agrégation."""
     dates = df["date_reception"]
     if granularite == "annee":
         return dates.dt.to_period("Y").dt.to_timestamp()
@@ -3051,14 +3150,14 @@ FAMILLE_COULEURS = {}          # rempli par appliquer_theme via _couleurs_famill
 
 
 def _couleurs_famille() -> dict[str, str]:
-    """La due diligence est la masse (ton clair), l'appel d'offres l'enjeu
+    """La due diligence est la masse (ton clair), l’appel d’offres l’enjeu
     commercial (encre pleine). Deux séries seulement : la distinction reste
-    lisible partout, et le libellé l'accompagne."""
+    lisible partout, et le libellé l’accompagne."""
     return {FAMILLE_DD: SERIES[2], FAMILLE_RFP: SERIES[0]}
 
 
 def _couleurs_resultat() -> dict[str, str]:
-    """Le résultat d'un RFP est un état : ton du carnet, libellé et valeur
+    """Le résultat d’un RFP est un état : ton du carnet, libellé et valeur
     écrits sur la marque."""
     return {RESULTAT_GAGNE: COMPARTIMENT_COLORS["gagnes"],
             RESULTAT_ATTENTE: COMPARTIMENT_COLORS["en_attente"],
@@ -3068,7 +3167,7 @@ def _couleurs_resultat() -> dict[str, str]:
 
 def _couleurs_esg() -> dict[str, str]:
     """Rampe ordinale : plus la composante ESG est forte, plus le ton est
-    soutenu. L'ESG n'est ni un succès ni un échec."""
+    soutenu. L’ESG n’est ni un succès ni un échec."""
     return {ESG_FORT: teinte(1.0), ESG_MOYEN: teinte(0.58), ESG_FAIBLE: teinte(0.28),
             ESG_INCONNU: teinte(0.10)}
 
@@ -3080,7 +3179,7 @@ def _figure_rang(labels: Sequence[str], valeurs: Sequence[float],
     """Classement en barres horizontales, queue regroupée dans « Autres ».
 
     Remplace le camembert à vingt parts : au-delà de sept catégories, aucune
-    part d'un disque n'est comparable à l'œil.
+    part d’un disque n’est comparable à l'œil.
     """
     donnees = pd.DataFrame({"label": list(labels), "valeur": list(valeurs)})
     donnees["survol"] = list(survol) if survol is not None else donnees["valeur"].map(formateur)
@@ -3121,7 +3220,7 @@ def _empiler(fig: go.Figure, index: Sequence[Any], pivot: pd.DataFrame,
 
 
 # =============================================================================
-#  01 — VUE D'ENSEMBLE
+#  01 — VUE D’ENSEMBLE
 # =============================================================================
 def _bloc_flux_famille(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
     """Le graphique central du pilotage : combien arrive, et de quelle nature."""
@@ -3144,7 +3243,7 @@ def _bloc_flux_famille(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
             mode="lines", name="Tendance", line=dict(color=INK, width=2),
             hovertemplate="Tendance : %{y:.1f}<extra></extra>"))
     if len(complet) < len(total):
-        # Repère posé dans l'espace du cadre : il ne recouvre jamais une barre.
+        # Repère posé dans l’espace du cadre : il ne recouvre jamais une barre.
         fig.add_annotation(xref="paper", yref="paper", x=1, y=1.04, xanchor="right",
                            yanchor="bottom", text="dernière période partielle",
                            font=dict(size=10.5, color=INK_MUTED))
@@ -3165,22 +3264,22 @@ def _bloc_flux_famille(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
     tableau["Total"] = total.to_numpy()
     return Block("flux_famille", "synthese", "Flux de questionnaires", accroche, fig,
                  tableau.reset_index(drop=True),
-                 note="Volume reçu, et non traité : c'est la charge qui arrive au pôle. "
+                 note="Volume reçu, et non traité : c’est la charge qui arrive au pôle. "
                       "La tendance est ajustée sur les périodes complètes uniquement.",
                  large=True)
 
 
 def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
     """La décomposition que lit la manager : combien de questionnaires arrivent,
-    de quelle famille, et — pour les appels d'offres seuls — ce qu'ils deviennent.
+    de quelle famille, et — pour les appels d’offres seuls — ce qu’ils deviennent.
 
     Forme retenue : un arbre de nombres reliés, pas un pavage. Les effectifs vont
     de 6 à 1 400 ; toute forme proportionnelle rendrait les petites branches
     illisibles, alors que ce sont justement celles qui appellent une décision.
     La proportion reste encodée, par la barre sous chaque nombre.
 
-    Une due diligence n'a pas de branche fille : elle n'a pas de résultat
-    commercial. L'arbre montre la règle au lieu de l'écrire.
+    Une due diligence n’a pas de branche fille : elle n’a pas de résultat
+    commercial. L’arbre montre la règle au lieu de l’écrire.
     """
     total = nb_questionnaires(df)
     if not total:
@@ -3191,7 +3290,7 @@ def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     couleurs_f = _couleurs_famille()
     couleurs_compartiment = dict(COMPARTIMENT_COLORS)
 
-    # --- construction de l'arbre -------------------------------------------
+    # --- construction de l’arbre -------------------------------------------
     # Un nœud = (clé, libellé, effectif, couleur, niveau, clé du parent).
     noeuds: list[dict[str, Any]] = [
         dict(cle="total", libelle="Questionnaires reçus", valeur=total,
@@ -3202,7 +3301,7 @@ def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
                            couleur=couleurs_f[FAMILLE_DD], niveau=1, parent="total"))
         feuilles.append("dd")
     if n_rfp:
-        noeuds.append(dict(cle="rfp", libelle="Appels d'offres", valeur=n_rfp,
+        noeuds.append(dict(cle="rfp", libelle="Appels d’offres", valeur=n_rfp,
                            couleur=couleurs_f[FAMILLE_RFP], niveau=1, parent="total"))
         reste = n_rfp
         for cle, libelle, _ in COMPARTIMENTS:
@@ -3225,7 +3324,7 @@ def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
         return None
 
     # --- mise en page : les feuilles régulièrement espacées, les parents
-    #     centrés sur leurs enfants. C'est la disposition d'arbre classique.
+    #     centrés sur leurs enfants. C’est la disposition d’arbre classique.
     par_cle = {n["cle"]: n for n in noeuds}
     for rang, cle in enumerate(feuilles):
         par_cle[cle]["y"] = 1 - (rang + 0.5) / len(feuilles)
@@ -3262,7 +3361,7 @@ def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
                                 f"{milieu},{y} {arrivee},{y}"),
                           line=dict(color=AXIS, width=1))
         # Piste de la barre de proportion (fond), puis la marque elle-même —
-        # une vraie marque de données, pour qu'elle porte le survol.
+        # une vraie marque de données, pour qu’elle porte le survol.
         fig.add_shape(type="rect", x0=x, x1=x + largeur, y0=y - 0.058, y1=y - 0.044,
                       fillcolor=_rgba(INK, 0.07), line_width=0, layer="below")
         bases.append(x)
@@ -3292,30 +3391,30 @@ def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
 
     gagnes = livre.n("gagnes")
     accroche = (f"{fmt_int(total)} questionnaires reçus : {fmt_pct(n_dd / total, 0)} de due "
-                f"diligence, {fmt_int(n_rfp)} appels d'offres")
+                f"diligence, {fmt_int(n_rfp)} appels d’offres")
     accroche += (f", dont {fmt_int(gagnes)} remportés sur {fmt_int(tranches)} tranchés."
                  if tranches else ", aucun encore tranché.")
 
     tableau = pd.DataFrame([{
-        "Niveau": ("Total", "Famille", "Résultat de l'appel d'offres")[n["niveau"]],
+        "Niveau": ("Total", "Famille", "Résultat de l’appel d’offres")[n["niveau"]],
         "Catégorie": n["libelle"], "Questionnaires": fmt_int(n["valeur"]),
         "Part du total": fmt_pct(n["valeur"] / total, 1)} for n in noeuds])
-    return Block("decomposition", "synthese", "Décomposition de l'activité",
+    return Block("decomposition", "synthese", "Décomposition de l’activité",
                  accroche, fig, tableau,
-                 note="La branche « due diligence » n'a pas de suite : une due diligence "
-                      "se traite, elle ne se gagne pas. Les états d'un appel d'offres "
+                 note="La branche « due diligence » n’a pas de suite : une due diligence "
+                      "se traite, elle ne se gagne pas. Les états d’un appel d’offres "
                       "sont exclusifs et couvrent son total. La barre sous chaque nombre "
                       "est sa part du total reçu.",
                  large=True)
 
 
 def _bloc_trimestre(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Ce qui s'est passé, trimestre après trimestre — huit points de repère.
+    """Ce qui s’est passé, trimestre après trimestre — huit points de repère.
 
-    Quatre mouvements seulement, et seulement ceux qu'on sait dater : ce qui
+    Quatre mouvements seulement, et seulement ceux qu’on sait dater : ce qui
     arrive (réception), ce qui part (envoi), et ce que ça rapporte. Une décision
-    client n'a pas de date dans la base : elle ne figure donc pas ici, plutôt
-    que d'être rattachée à une date qui n'est pas la sienne.
+    client n’a pas de date dans la base : elle ne figure donc pas ici, plutôt
+    que d’être rattachée à une date qui n’est pas la sienne.
     """
     if df.empty or len(df) < 20:
         return None
@@ -3343,7 +3442,7 @@ def _bloc_trimestre(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Blo
 
     mouvements = [
         ("Questionnaires reçus", serie(recus), fmt_int, SERIES[0]),
-        ("Appels d'offres reçus", serie(recus, recus["est_rfp"]), fmt_int, SERIES[0]),
+        ("Appels d’offres reçus", serie(recus, recus["est_rfp"]), fmt_int, SERIES[0]),
         ("Réponses envoyées", serie(envoyes), fmt_int, SERIES[0]),
         ("Encours remporté", serie(recus, None, "aum_gagne"),
          lambda v: fmt_dec(v, 0, "M€"), SERIES[0]),
@@ -3405,10 +3504,10 @@ def _bloc_trimestre(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Blo
     return Block("trimestre", "synthese", "Les huit derniers trimestres", accroche, fig,
                  tableau,
                  note=("Le dernier trimestre est en cours : sa barre est atténuée et sa "
-                       "comparaison n'a pas de valeur. " if partiel else "")
-                      + "« Reçus » se date par la réception, « envoyées » par l'envoi, "
-                        "l'encours remporté par la réception du dossier gagné. Une décision "
-                        "client n'a pas de date dans la base : elle ne figure pas ici.",
+                       "comparaison n’a pas de valeur. " if partiel else "")
+                      + "« Reçus » se date par la réception, « envoyées » par l’envoi, "
+                        "l’encours remporté par la réception du dossier gagné. Une décision "
+                        "client n’a pas de date dans la base : elle ne figure pas ici.",
                  large=True)
 
 
@@ -3476,7 +3575,7 @@ def _periode_en_cours(horodatage: Any, granularite: str) -> bool:
 
 
 def _bloc_resultats_rfp(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Que deviennent les appels d'offres remis ?"""
+    """Que deviennent les appels d’offres remis ?"""
     comptes = compte_resultats(df)
     if comptes.empty or comptes.sum() == 0:
         return None
@@ -3491,7 +3590,7 @@ def _bloc_resultats_rfp(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
         hovertemplate="%{y} : %{x} RFP<extra></extra>",
     ))
     fig.update_yaxes(autorange="reversed")
-    fig.update_xaxes(title_text="Appels d'offres")
+    fig.update_xaxes(title_text="Appels d’offres")
     _labels_exterieurs(fig, list(comptes.values), 1.32)
 
     taux, gagnes, tranches, ic = taux_succes_rfp(df)
@@ -3505,15 +3604,15 @@ def _bloc_resultats_rfp(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     tableau = pd.DataFrame({
         "Résultat": list(comptes.index), "Dossiers": list(comptes.values),
         "Part": [fmt_pct(v / total, 1) for v in comptes.values]})
-    return Block("resultats_rfp", "rfp", "Résultat des appels d'offres",
+    return Block("resultats_rfp", "rfp", "Résultat des appels d’offres",
                  accroche, fig, tableau,
                  note="Les dossiers en attente de décision sortent du dénominateur du "
                       "taux de succès ; ils ne sont pas des échecs. « Sans suite » "
-                      "désigne les dossiers auxquels le pôle n'a pas répondu.")
+                      "désigne les dossiers auxquels le pôle n’a pas répondu.")
 
 
 def _bloc_cadence(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Capacité de production : ce que l'équipe termine, mois après mois."""
+    """Capacité de production : ce que l’équipe termine, mois après mois."""
     if df.empty or df["date_envoi"].notna().sum() < 12:
         return None
     envoyes = df.dropna(subset=["date_envoi"]).copy()
@@ -3536,14 +3635,14 @@ def _bloc_cadence(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block
 
     cadence_dd = cadence_mensuelle(df, FAMILLE_DD)
     cadence_rfp = cadence_mensuelle(df, FAMILLE_RFP)
-    accroche = (f"L'équipe termine en moyenne {fmt_dec(cadence_dd, 1)} due diligences et "
-                f"{fmt_dec(cadence_rfp, 1)} appels d'offres par mois.")
+    accroche = (f"L’équipe termine en moyenne {fmt_dec(cadence_dd, 1)} due diligences et "
+                f"{fmt_dec(cadence_rfp, 1)} appels d’offres par mois.")
     tableau = pivot.copy()
     tableau.insert(0, "Mois", [fmt_mois(i) for i in pivot.index])
     tableau["Total"] = pivot.sum(axis=1).to_numpy()
     return Block("cadence", "activite", "Cadence de traitement", accroche, fig,
                  tableau.reset_index(drop=True),
-                 note="Comptage par date d'ENVOI : c'est la production de l'équipe, à "
+                 note="Comptage par date d’ENVOI : c’est la production de l’équipe, à "
                       "distinguer de la charge qui lui arrive.")
 
 
@@ -3592,7 +3691,7 @@ def _bloc_volume_annuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     tableau = tableau.rename(columns={"annee": "Année"})
     return Block("volume_annuel", "activite", "Évolution annuelle de la charge",
                  accroche, fig, tableau,
-                 note="L'année en cours est partielle : elle ne se compare pas aux années "
+                 note="L’année en cours est partielle : elle ne se compare pas aux années "
                       "pleines, et elle est exclue des taux de croissance.", large=True)
 
 
@@ -3639,7 +3738,7 @@ def _bloc_delai_famille(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     accroche = (f"Un dossier « {plus_long} » demande {fmt_dec(delai_median(df, plus_long), 0)} "
                 f"jours calendaires en médiane, contre "
                 f"{fmt_dec(delai_median(df, familles[0] if familles[0] != plus_long else familles[-1]), 0)} "
-                f"pour l'autre famille.")
+                f"pour l’autre famille.")
     return Block("delai_famille", "activite", "Délais de traitement par famille",
                  accroche, fig, pd.DataFrame(lignes),
                  note="Jours calendaires, comme au comité. Boîte = 1er au 3e quartile, "
@@ -3665,7 +3764,7 @@ def _bloc_rfp_resultats_annee(df: pd.DataFrame, mensuel: pd.DataFrame, stats: di
     fig = _fig(370, barmode="stack", hovermode="x unified")
     _empiler(fig, index, pivot, _couleurs_resultat(), " RFP")
     fig.update_xaxes(tickmode="array", tickvals=index, ticktext=[str(a) for a in index])
-    fig.update_yaxes(title_text="Appels d'offres reçus", rangemode="tozero")
+    fig.update_yaxes(title_text="Appels d’offres reçus", rangemode="tozero")
     fig.update_layout(bargap=0.3)
 
     tranches = pivot.get(RESULTAT_GAGNE, 0) + pivot.get(RESULTAT_PERDU, 0)
@@ -3676,12 +3775,12 @@ def _bloc_rfp_resultats_annee(df: pd.DataFrame, mensuel: pd.DataFrame, stats: di
                     f"({fmt_pct(taux_annuel.max(), 0)}), le plus bas en "
                     f"{taux_annuel.idxmin()} ({fmt_pct(taux_annuel.min(), 0)}).")
     else:
-        accroche = f"{fmt_int(len(rfp))} appels d'offres reçus sur la période."
+        accroche = f"{fmt_int(len(rfp))} appels d’offres reçus sur la période."
     tableau = pivot.copy()
     tableau.insert(0, "Année", [str(a) for a in index])
     tableau["Taux de succès"] = [fmt_pct(v, 0) if pd.notna(v) else "—"
                                  for v in (pivot.get(RESULTAT_GAGNE, 0) / tranches.replace(0, np.nan))]
-    return Block("rfp_resultats_annee", "rfp", "Résultats des RFP par année",
+    return Block("rfp_resultats_annee", "rfp", "Résultats par année",
                  accroche, fig, tableau.reset_index(drop=True),
                  note="Les dossiers récents sont surreprésentés en « En attente » : une "
                       "décision client intervient plusieurs mois après la remise.",
@@ -3689,7 +3788,7 @@ def _bloc_rfp_resultats_annee(df: pd.DataFrame, mensuel: pd.DataFrame, stats: di
 
 
 def _bloc_rfp_reception(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Rythme d'arrivée des appels d'offres."""
+    """Rythme d’arrivée des appels d’offres."""
     rfp = df[df["est_rfp"]]
     if len(rfp) < 12:
         return None
@@ -3700,7 +3799,7 @@ def _bloc_rfp_reception(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     if len(serie) < 4:
         return None
     fig = _fig(320, hovermode="x unified")
-    fig.add_trace(go.Bar(x=serie.index, y=serie.values, name="RFP reçus",
+    fig.add_trace(go.Bar(x=serie.index, y=serie.values, name="Appels d’offres reçus",
                          marker=_marque(SERIES[1], 1.2),
                          hovertemplate="%{y} RFP<extra></extra>"))
     if len(serie) >= 8:
@@ -3710,20 +3809,20 @@ def _bloc_rfp_reception(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
                                  line=dict(color=INK, width=2),
                                  hovertemplate="Moyenne : %{y:.1f}<extra></extra>"))
     _axe_periode(fig, serie.index, "mois")
-    fig.update_yaxes(title_text="RFP reçus", rangemode="tozero")
+    fig.update_yaxes(title_text="Appels d’offres reçus", rangemode="tozero")
     pic = serie.idxmax()
-    accroche = (f"{fmt_dec(serie.mean(), 1)} appel{accord(serie.mean())} d'offres "
+    accroche = (f"{fmt_dec(serie.mean(), 1)} appel{accord(serie.mean())} d’offres "
                 f"par mois en moyenne ; "
                 f"pic à {int(serie.max())} en {fmt_mois(pic)}.")
     tableau = pd.DataFrame({"Mois": [fmt_mois(i) for i in serie.index],
-                            "RFP reçus": serie.values})
-    return Block("rfp_reception", "rfp", "Arrivée des appels d'offres", accroche, fig,
+                            "Appels d’offres reçus": serie.values})
+    return Block("rfp_reception", "rfp", "Arrivée des appels d’offres", accroche, fig,
                  tableau, note="Comptage par date de réception. La moyenne mobile lisse "
-                               "l'irrégularité propre aux appels d'offres.")
+                               "l’irrégularité propre aux appels d’offres.")
 
 
 def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Où gagne-t-on ? Taux de succès par classe d'actifs, avec incertitude."""
+    """Où gagne-t-on ? Taux de succès par classe d’actifs, avec incertitude."""
     rfp = df[df["est_rfp"] & df["resultat"].isin([RESULTAT_GAGNE, RESULTAT_PERDU])]
     if len(rfp) < 12 or not _dispo(rfp, "classe_actifs", min_modalites=2):
         return None
@@ -3770,13 +3869,13 @@ def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: d
                 f"« {groupe.index[0]} »"
                 + (" — écart significatif au seuil de 5 %."
                    if meilleure["bas"] > pire["haut"]
-                   else " — mais les intervalles se recouvrent : l'écart n'est pas établi."))
+                   else " — mais les intervalles se recouvrent : l’écart n’est pas établi."))
     tableau = groupe.reset_index()[["classe_actifs", "tranches", "gagnes", "taux", "aum"]]
     tableau["taux"] = tableau["taux"].map(lambda v: fmt_pct(v, 1))
     tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
-    tableau.columns = ["Classe d'actifs", "Tranchés", "Gagnés", "Taux de succès",
+    tableau.columns = ["Classe d’actifs", "Tranchés", "Gagnés", "Taux de succès",
                        "Encours remporté"]
-    return Block("rfp_succes", "rfp", "Taux de succès par classe d'actifs",
+    return Block("rfp_succes", "rfp", "Taux de succès par classe d’actifs",
                  accroche, fig, tableau.sort_values("Tranchés", ascending=False),
                  note="Moustaches = intervalle de confiance de Wilson à 95 %. Deux classes "
                       "dont les intervalles se recouvrent ne sont pas départageables. "
@@ -3785,7 +3884,7 @@ def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: d
 
 
 def _bloc_rfp_consultants(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Quels cabinets intermédiaires pèsent sur le flux d'appels d'offres ?"""
+    """Quels cabinets intermédiaires pèsent sur le flux d’appels d’offres ?"""
     rfp = df[df["est_rfp"]]
     if len(rfp) < 10 or not _dispo(rfp, "consultant", min_modalites=2):
         return None
@@ -3800,15 +3899,15 @@ def _bloc_rfp_consultants(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
               for v, g, a in zip(groupe["volume"], groupe["gagnes"], groupe["aum"])]
     fig, complet = _figure_rang(groupe.index, groupe["volume"], fmt_int,
                                 couleur=SERIES[1], top=10, survol=survol,
-                                titre_axe="Appels d'offres")
+                                titre_axe="Appels d’offres")
     direct = int((rfp["consultant"] == VALEUR_INCONNUE).sum())
-    accroche = (f"{fmt_int(int(groupe['volume'].sum()))} appels d'offres passent par un "
+    accroche = (f"{fmt_int(int(groupe['volume'].sum()))} appels d’offres passent par un "
                 f"cabinet ; {fmt_int(direct)} arrivent en direct "
                 f"({fmt_pct(direct / max(len(rfp), 1), 0)}).")
     tableau = groupe.reset_index().sort_values("volume", ascending=False)
     tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
     tableau.columns = ["Consultant", "RFP", "Gagnés", "Encours remporté"]
-    return Block("rfp_consultants", "rfp", "Appels d'offres par consultant",
+    return Block("rfp_consultants", "rfp", "Appels d’offres par consultant",
                  accroche, fig, tableau,
                  note="Les dossiers reçus en direct ne sont pas comptés dans le "
                       "classement ; leur volume figure dans le commentaire.",
@@ -3848,8 +3947,8 @@ def _bloc_dd_mensuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
 def _bloc_type_detail(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
     """RFI et DDQ : le détail que la famille « due diligence » recouvre.
 
-    Bloc d'ÉCRAN uniquement (`hors_rapport`). Le rapport diffusé raisonne en
-    deux familles ; à l'écran, distinguer la demande d'information courte du
+    Bloc d’ÉCRAN uniquement (`hors_rapport`). Le rapport diffusé raisonne en
+    deux familles ; à l’écran, distinguer la demande d’information courte du
     questionnaire de due diligence formel change la lecture de la charge.
     """
     dd = df[df["est_dd"]]
@@ -3892,9 +3991,9 @@ def _bloc_type_detail(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> B
     })
     return Block("type_detail", "dd", "RFI et DDQ : le détail de la charge", accroche, fig,
                  tableau,
-                 note="Visible à l'écran uniquement : le rapport diffusé s'en tient aux "
+                 note="Visible à l’écran uniquement : le rapport diffusé s’en tient aux "
                       "deux familles de pilotage, RFP et due diligence. Les deux types "
-                      "n'ont ni le même volume de questions ni le même délai cible.",
+                      "n’ont ni le même volume de questions ni le même délai cible.",
                  large=True, dimension="type_demande", hors_rapport=True)
 
 
@@ -3923,8 +4022,8 @@ def _bloc_dd_expertise(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
     tableau.columns = ["Expertise", "Dossiers", "Délai médian", "Part de la charge"]
     return Block("dd_expertise", "dd", "Charge par expertise", accroche, fig,
                  tableau[["Expertise", "Dossiers", "Part de la charge", "Délai médian"]],
-                 note="Classement en barres plutôt qu'en camembert : au-delà de sept "
-                      "catégories, aucune part d'un disque n'est comparable à l'œil.",
+                 note="Classement en barres plutôt qu’en camembert : au-delà de sept "
+                      "catégories, aucune part d’un disque n’est comparable à l'œil.",
                  dimension="expertise")
 
 
@@ -3993,7 +4092,7 @@ def _bloc_dd_matrice(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
 #  05 — ENCOURS & GAINS
 # =============================================================================
 def _bloc_aum_annuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """La collecte issue des appels d'offres, année par année."""
+    """La collecte issue des appels d’offres, année par année."""
     gagnes = df[df["est_rfp"] & df["est_gagne"] & df["aum_gagne"].notna()]
     if len(gagnes) < 3:
         return None
@@ -4025,7 +4124,7 @@ def _bloc_aum_annuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
     meilleure = annuel["aum"].idxmax()
     part = annuel["aum"].max() / max(annuel["aum"].sum(), 1)
     accroche = (f"{fmt_dec(annuel['aum'].sum(), 0, 'M€')} remportés sur la période. "
-                f"L'année {meilleure} en concentre {fmt_pct(part, 0)} à elle seule "
+                f"L’année {meilleure} en concentre {fmt_pct(part, 0)} à elle seule "
                 f"({fmt_dec(annuel['aum'].max(), 0, 'M€')}).")
     tableau = annuel.reset_index()
     tableau["ticket"] = (annuel["aum"] / annuel["mandats"]).to_numpy()
@@ -4033,9 +4132,9 @@ def _bloc_aum_annuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
     tableau["Année"] = tableau["Année"].astype(str)
     return Block("aum_annuel", "aum", "Encours remporté par année", accroche, fig,
                  tableau.round(0),
-                 note="Encours rattaché à l'année de RÉCEPTION du dossier. La collecte "
-                      "issue des appels d'offres est par nature irrégulière : un mandat "
-                      "peut représenter plusieurs fois le total d'une année ordinaire.",
+                 note="Encours rattaché à l’année de RÉCEPTION du dossier. La collecte "
+                      "issue des appels d’offres est par nature irrégulière : un mandat "
+                      "peut représenter plusieurs fois le total d’une année ordinaire.",
                  large=True)
 
 
@@ -4052,7 +4151,7 @@ def _bloc_aum_clients(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> B
                           survol=survol, titre_axe="Encours remporté (M€)")
     tete = groupe.sort_values("aum", ascending=False)
     part = tete["aum"].iloc[0] / max(groupe["aum"].sum(), 1)
-    accroche = (f"« {tete.index[0]} » représente {fmt_pct(part, 0)} de l'encours remporté "
+    accroche = (f"« {tete.index[0]} » représente {fmt_pct(part, 0)} de l’encours remporté "
                 f"({fmt_dec(tete['aum'].iloc[0], 0, 'M€')}).")
     tableau = tete.reset_index()
     tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
@@ -4078,14 +4177,14 @@ def _bloc_aum_strategies(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -
     tete = groupe.sort_values("aum", ascending=False)
     accroche = (f"« {tete.index[0]} » concentre "
                 f"{fmt_pct(tete['aum'].iloc[0] / max(groupe['aum'].sum(), 1), 0)} de "
-                f"l'encours remporté.")
+                f"l’encours remporté.")
     tableau = tete.reset_index()
     tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
     tableau.columns = [DIMENSIONS.get(champ, champ), "Encours remporté", "Mandats"]
     return Block("aum_strategies", "aum", "Stratégies par encours remporté",
                  accroche, fig, tableau,
-                 note="Ventilation par sous-classe d'actifs lorsque l'information est "
-                      "disponible, par classe d'actifs sinon.")
+                 note="Ventilation par sous-classe d’actifs lorsque l’information est "
+                      "disponible, par classe d’actifs sinon.")
 
 
 # =============================================================================
@@ -4138,12 +4237,12 @@ def _bloc_esg_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     return Block("esg_evolution", "esg", "Évolution de la composante ESG", accroche, fig,
                  tableau,
                  note="Tranches telles que suivies au comité. Les dossiers dont la part "
-                      "ESG n'est pas renseignée forment une catégorie à part : les "
+                      "ESG n’est pas renseignée forment une catégorie à part : les "
                       "compter comme « peu ESG » fausserait la série.", large=True)
 
 
 def _bloc_esg_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Quelles expertises portent réellement l'exigence ESG ?"""
+    """Quelles expertises portent réellement l’exigence ESG ?"""
     connus = df[df["bande_esg"] != ESG_INCONNU]
     champ = "expertise" if _dispo(connus, "expertise", min_modalites=3) else "classe_actifs"
     if len(connus) < 20 or not _dispo(connus, champ, min_modalites=2):
@@ -4160,7 +4259,7 @@ def _bloc_esg_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
                           lambda v: fmt_dec(v, 0, "%"), couleur=SEQUENTIEL[-2], top=10,
                           survol=survol, titre_axe="Part des dossiers à forte composante ESG")
     tete = groupe.sort_values("part", ascending=False)
-    accroche = (f"« {tete.index[0]} » est l'expertise la plus sollicitée sur l'ESG : "
+    accroche = (f"« {tete.index[0]} » est l’expertise la plus sollicitée sur l’ESG : "
                 f"{fmt_pct(tete['part'].iloc[0], 0)} de ses questionnaires dépassent "
                 f"{fmt_pct(ESG_SEUIL_FORT, 0)} de contenu ESG.")
     tableau = tete.reset_index()
@@ -4202,7 +4301,7 @@ def _bloc_delai_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
     reg = ols(m["indice"], m["delai_median"])
     stats["tendance_delai"] = reg
     if reg is not None and reg.significatif:
-        sens = "se dégrade" if reg.pente > 0 else "s'améliore"
+        sens = "se dégrade" if reg.pente > 0 else "s’améliore"
         accroche = (f"Le délai médian {sens} de {fmt_dec(abs(reg.pente) * 12, 1)} "
                 f"jour{accord(reg.pente * 12)} par an "
                     f"({fmt_p(reg.p_value)}).")
@@ -4223,8 +4322,8 @@ def _bloc_delai_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
     return Block("delai_evolution", "activite", "Évolution du délai de traitement",
                  accroche, fig, tableau,
                  note="La bande claire couvre la moitié centrale des dossiers du mois. "
-                      "Le délai cible varie légèrement d'un mois à l'autre : il suit le mix "
-                      "questionnaire reçu, appel d'offres comme due diligence. Le mois en "
+                      "Le délai cible varie légèrement d’un mois à l’autre : il suit le mix "
+                      "questionnaire reçu, appel d’offres comme due diligence. Le mois en "
                       "cours est exclu : seuls les dossiers "
                       "déjà envoyés y figureraient, ce qui ferait artificiellement baisser "
                       "la médiane.", large=True)
@@ -4266,7 +4365,7 @@ def _bloc_charge_analyste(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
     return Block("charge_analyste", "activite", "Répartition de la charge par analyste",
                  accroche, fig, tableau,
                  note="Vue de charge, pas de performance : le nombre de questions dépend du type "
-                      "de dossier reçu, et le taux de succès dépend d'abord du marché adressé.")
+                      "de dossier reçu, et le taux de succès dépend d’abord du marché adressé.")
 
 
 def _bloc_saisonnalite(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
@@ -4276,7 +4375,7 @@ def _bloc_saisonnalite(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
                             aggfunc="size", fill_value=0)
              .reindex(columns=range(1, 13), fill_value=0).sort_index())
     # On masque les mois hors période observée : un 0 « faute de données »
-    # n'est pas un 0 d'activité.
+    # n’est pas un 0 d’activité.
     debut, fin = df["date_reception"].min(), df["date_reception"].max()
     z = pivot.astype(float).to_numpy(copy=True)   # copie : pandas 3 renvoie une vue figée
     for i, annee in enumerate(pivot.index):
@@ -4316,10 +4415,10 @@ def _bloc_saisonnalite(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
     tableau = pivot.reset_index()
     tableau.columns = ["Année"] + MOIS_FR
     tableau["Total"] = pivot.sum(axis=1).to_numpy()
-    return Block("saisonnalite", "activite", "Saisonnalité de l'activité", accroche, fig, tableau,
+    return Block("saisonnalite", "activite", "Saisonnalité de l’activité", accroche, fig, tableau,
                  note="Les mois antérieurs ou postérieurs à la période observée sont laissés vides "
                       "plutôt que comptés à zéro. Une seule teinte, du clair au foncé : "
-                      "l'intensité code la magnitude.", large=True)
+                      "l’intensité code la magnitude.", large=True)
 
 
 def _bloc_regression_delai(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
@@ -4341,7 +4440,7 @@ def _bloc_regression_delai(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict)
                              fillcolor=_rgba(INK, 0.09), line=dict(width=0),
                              name="IC 95 % de la droite", hoverinfo="skip"))
     # Nuage coloré par FAMILLE (deux teintes, les deux premiers slots validés en
-    # toutes-paires) et non par type fin : c'est la lecture du pilotage, et le
+    # toutes-paires) et non par type fin : c’est la lecture du pilotage, et le
     # rapport diffusé ne connaît que ces deux familles.
     couleurs_f = _couleurs_famille()
     for f in [f for f in FAMILLE_ORDER if f in sous["famille"].unique()]:
@@ -4371,16 +4470,16 @@ def _bloc_regression_delai(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict)
                 f"(IC 95 % : {fmt_dec(reg.ic_pente[0] * 10, 1)} à {fmt_dec(reg.ic_pente[1] * 10, 1)}). "
                 f"Le volume de questions explique {fmt_pct(reg.r2, 0)} de la variance des délais.")
     tableau = pd.DataFrame({
-        "Grandeur": ["Pente (jour par question)", "Effet de 10 questions", "Ordonnée à l'origine",
+        "Grandeur": ["Pente (jour par question)", "Effet de 10 questions", "Ordonnée à l’origine",
                      "R²", "R² ajusté", "p-value", "Observations"],
         "Valeur": [fmt_dec(reg.pente, 4), fmt_dec(par_dix, 2) + " j", fmt_dec(reg.ordonnee, 2) + " j",
                    fmt_dec(reg.r2, 3), fmt_dec(reg.r2_ajuste, 3), fmt_p(reg.p_value), fmt_int(reg.n)],
     })
     return Block("reg_questions", "diagnostic",
                  "Le volume de questions explique-t-il le délai ?", accroche, fig, tableau,
-                 note="Moindres carrés ordinaires. La bande grise est l'intervalle de confiance à "
-                      "95 % de la droite de régression, pas celui d'un dossier individuel. "
-                      "Corrélation n'est pas causalité : d'autres facteurs sont testés ci-dessous.",
+                 note="Moindres carrés ordinaires. La bande grise est l’intervalle de confiance à "
+                      "95 % de la droite de régression, pas celui d’un dossier individuel. "
+                      "Corrélation n’est pas causalité : d’autres facteurs sont testés ci-dessous.",
                  large=True)
 
 
@@ -4397,9 +4496,9 @@ def _bloc_facteurs(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bloc
     X["Questions (+10)"] = sous["nb_questions"] / 10.0
     # Une seule indicatrice de nature, sur la FAMILLE : modalité de référence,
     # la due diligence. Le pilotage — et le rapport diffusé — raisonnent en deux
-    # familles ; le détail RFI / DDQ reste à l'écran, dans son bloc dédié.
+    # familles ; le détail RFI / DDQ reste à l’écran, dans son bloc dédié.
     if int(sous["est_rfp"].sum()) >= 15 and int(sous["est_dd"].sum()) >= 15:
-        X["Appel d'offres"] = sous["est_rfp"].astype(float)
+        X["Appel d’offres"] = sous["est_rfp"].astype(float)
     if _dispo(sous, "langue", min_modalites=2):
         X["Langue étrangère"] = (~sous["langue"].isin(["Français", VALEUR_INCONNUE])).astype(float)
     X["Charge du mois (+10 demandes)"] = volumes / 10.0
@@ -4453,7 +4552,7 @@ def _bloc_facteurs(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bloc
                     f"({fmt_p(dominant.p_value)})."
                     + (f" Sans effet mesurable : {', '.join(muets[:3])}." if muets else ""))
     else:
-        accroche = "Aucun des facteurs testés n'a d'effet statistiquement significatif sur le délai."
+        accroche = "Aucun des facteurs testés n’a d’effet statistiquement significatif sur le délai."
     tableau = pd.DataFrame([{
         "Facteur": c.nom, "Effet (jours)": fmt_dec(c.valeur, 3),
         "Erreur type": fmt_dec(c.stderr, 3), "IC 95 %": f"{fmt_dec(c.ic_bas, 2)} à {fmt_dec(c.ic_haut, 2)}",
@@ -4462,9 +4561,9 @@ def _bloc_facteurs(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bloc
     } for c in modele.coefficients])
     return Block("facteurs", "diagnostic", "Facteurs explicatifs du délai de traitement",
                  accroche, fig, tableau,
-                 note="Régression linéaire multiple. Chaque effet s'interprète à autres facteurs "
+                 note="Régression linéaire multiple. Chaque effet s’interprète à autres facteurs "
                       "constants. La modalité de référence est la due diligence : « appel "
-                      "d'offres » se lit donc comme l'écart de délai face à elle. "
+                      "d’offres » se lit donc comme l’écart de délai face à elle. "
                       "Un point vide signale un effet non distinguable de zéro au seuil de 5 %.",
                  large=True)
 
@@ -4472,7 +4571,7 @@ def _bloc_facteurs(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bloc
 def _bloc_projection(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
     if mensuel.empty or len(mensuel) < 8:
         return None
-    # Le mois en cours est partiel : il fausserait l'ajustement.
+    # Le mois en cours est partiel : il fausserait l’ajustement.
     mois_courant = pd.Timestamp.today().normalize().replace(day=1)
     hist = mensuel[mensuel["mois"] < mois_courant]
     if len(hist) < 6:
@@ -4520,7 +4619,7 @@ def _bloc_projection(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
                     f"les {PROJECTION_MOIS} prochains mois, soit {fmt_dec(total_projete / PROJECTION_MOIS, 0)} "
                     f"par mois en moyenne (tendance significative, {fmt_p(reg.p_value)}).")
     else:
-        accroche = (f"La tendance n'est pas significative ({fmt_p(reg.p_value)}) : la projection "
+        accroche = (f"La tendance n’est pas significative ({fmt_p(reg.p_value)}) : la projection "
                     f"de {fmt_int(total_projete)} demandes sur {PROJECTION_MOIS} mois vaut comme "
                     f"prolongement de la moyenne, pas comme prévision.")
     tableau = pd.DataFrame({
@@ -4533,18 +4632,18 @@ def _bloc_projection(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
                  f"Projection du flux à {PROJECTION_MOIS} mois", accroche, fig, tableau,
                  note="Prolongement linéaire de la tendance observée, avec intervalle de prédiction "
                       "à 95 %. Ce modèle ignore la saisonnalité : il donne un ordre de grandeur, "
-                      "pas un budget. Le mois en cours, incomplet, est exclu de l'ajustement.",
+                      "pas un budget. Le mois en cours, incomplet, est exclu de l’ajustement.",
                  large=True)
 
 _CONSTRUCTEURS: tuple[Callable[[pd.DataFrame, pd.DataFrame, dict], Block | None], ...] = (
-    # 01 Vue d'ensemble
+    # 01 Vue d’ensemble
     # Quatre blocs, pas un de plus : où on en est, ce qui a bougé, la tendance
-    # longue, ce qu'on a gagné. Tout le reste appartient à la partie Analyse.
+    # longue, ce qu’on a gagné. Tout le reste appartient à la partie Analyse.
     _bloc_decomposition, _bloc_trimestre, _bloc_flux_famille, _bloc_mandats_remportes,
     # 02 Activité
     _bloc_volume_annuel, _bloc_cadence, _bloc_delai_famille, _bloc_delai_evolution,
     _bloc_saisonnalite, _bloc_charge_analyste,
-    # 03 Pipeline RFP
+    # 03 Appels d’offres
     _bloc_resultats_rfp, _bloc_rfp_resultats_annee, _bloc_rfp_reception,
     _bloc_rfp_succes_dimension, _bloc_rfp_consultants,
     # 04 Due diligence
@@ -4561,7 +4660,7 @@ _CONSTRUCTEURS: tuple[Callable[[pd.DataFrame, pd.DataFrame, dict], Block | None]
 
 @dataclass
 class Analysis:
-    """Résultat complet d'une analyse : c'est le seul objet que consomment
+    """Résultat complet d’une analyse : c’est le seul objet que consomment
     app.py (écran) et export.py (rapport HTML)."""
     df: pd.DataFrame
     filtres: Filters
@@ -4597,8 +4696,8 @@ class Analysis:
 
     @property
     def sections_rapport(self) -> list[tuple[str, str]]:
-        """Sections retenues pour le rapport diffusé : les blocs d'écran seuls
-        en sont exclus, et une section qui n'en contenait que disparaît."""
+        """Sections retenues pour le rapport diffusé : les blocs d’écran seuls
+        en sont exclus, et une section qui n’en contenait que disparaît."""
         return [(cle, libelle) for cle, libelle in SECTIONS.items()
                 if self.section(cle, pour_rapport=True)]
 
@@ -4618,7 +4717,7 @@ def build_analysis(df: pd.DataFrame, filtres: Filters | None = None,
                    df_precedent: pd.DataFrame | None = None,
                    options: Mapping[str, Any] | None = None) -> Analysis:
     """Chaîne complète : KPI + tous les blocs. Un bloc qui échoue est signalé
-    dans `erreurs` mais n'interrompt jamais le reste du tableau de bord."""
+    dans `erreurs` mais n’interrompt jamais le reste du tableau de bord."""
     filtres = filtres or Filters()
     stats: dict[str, Any] = dict(options or {})
     erreurs: list[str] = []
@@ -4629,7 +4728,7 @@ def build_analysis(df: pd.DataFrame, filtres: Filters | None = None,
         for constructeur in _CONSTRUCTEURS:
             try:
                 bloc = constructeur(df, mensuel, stats)
-            except Exception as exc:                      # robustesse : un bloc, pas l'écran
+            except Exception as exc:                      # robustesse : un bloc, pas l’écran
                 erreurs.append(f"{constructeur.__name__} : {type(exc).__name__} — {exc}")
                 continue
             if bloc is not None:
@@ -4652,14 +4751,14 @@ def build_analysis(df: pd.DataFrame, filtres: Filters | None = None,
 # =============================================================================
 COLONNES_EXPORT: dict[str, str] = {
     "date_reception": "Date de réception",
-    "date_envoi": "Date d'envoi",
+    "date_envoi": "Date d’envoi",
     "type_demande": "Type",
     "statut": "Statut",
     "client": "Client",
     "type_client": "Type de client",
     "pays": "Pays",
     "fonds": "Fonds",
-    "classe_actifs": "Classe d'actifs",
+    "classe_actifs": "Classe d’actifs",
     "analyste": "Analyste",
     "langue": "Langue",
     "nb_questions": "Questions",
@@ -4742,9 +4841,9 @@ def _autotest() -> None:
     print(f"   ✓ {fmt_int(len(df))} lignes, trois écritures ESG absorbées")
 
     print("3. Cohérence métier")
-    # Une due diligence n'a pas de résultat commercial.
+    # Une due diligence n’a pas de résultat commercial.
     assert set(df.loc[df["est_dd"], "resultat"].unique()) == {RESULTAT_HORS_RFP}
-    # L'encours gagné n'existe que sur un RFP remporté.
+    # L’encours gagné n’existe que sur un RFP remporté.
     assert df.loc[df["aum_gagne"].notna(), "est_gagne"].all()
     assert df.loc[df["aum_gagne"].notna(), "est_rfp"].all()
     taux, gagnes, tranches, _ = taux_succes_rfp(df)
@@ -4786,14 +4885,14 @@ def _autotest() -> None:
         assert bloc.dimension is None or bloc.dimension in DIMENSIONS
     cliquables = [b.cle for b in analyse.blocs if b.dimension]
     assert len(cliquables) >= 4, cliquables
-    assert analyse.insights, "aucun constat produit sur l'historique complet"
+    assert analyse.insights, "aucun constat produit sur l’historique complet"
     print(f"   ✓ {len(analyse.blocs)} blocs sur {len(SECTIONS)} sections, "
           f"{len(cliquables)} cliquables, {len(analyse.insights)} constats")
 
-    print("7. Carnet d'appels d'offres")
+    print("7. Carnet d’appels d’offres")
     livre = carnet(df)
-    # Les cinq compartiments sont exclusifs et couvrent tous les RFP : c'est
-    # l'invariant qui autorise à lire la page d'accueil comme un état complet.
+    # Les cinq compartiments sont exclusifs et couvrent tous les RFP : c’est
+    # l’invariant qui autorise à lire la page d’accueil comme un état complet.
     total = sum(livre.n(cle) for cle, _, _ in COMPARTIMENTS)
     assert total == livre.total == int(df["est_rfp"].sum()), (total, livre.total)
     identifiants = [i for cle, _, _ in COMPARTIMENTS
@@ -4811,17 +4910,17 @@ def _autotest() -> None:
           f"{fmt_int(livre.vivants)} vivants, {fmt_int(len(livre.a_relancer))} à relancer")
 
     print("8. Périmètre du rapport diffusé")
-    # Le détail RFI / DDQ vit à l'écran ; le rapport s'en tient aux deux familles.
+    # Le détail RFI / DDQ vit à l’écran ; le rapport s’en tient aux deux familles.
     ecran = {b.cle for b in analyse.blocs}
     diffuse = {b.cle for cle, _ in analyse.sections_rapport
                for b in analyse.section(cle, pour_rapport=True)}
     exclus = ecran - diffuse
-    assert exclus, "aucun bloc d'écran : le mécanisme hors_rapport ne sert plus"
+    assert exclus, "aucun bloc d’écran : le mécanisme hors_rapport ne sert plus"
     assert all(b.hors_rapport for b in analyse.blocs if b.cle in exclus)
     assert not any(k.hors_rapport for k in analyse.kpis_rapport)
-    assert {"rfi", "ddq"} <= {k.cle for k in analyse.kpis}, "détail des types absent de l'écran"
+    assert {"rfi", "ddq"} <= {k.cle for k in analyse.kpis}, "détail des types absent de l’écran"
     print(f"   ✓ {pluriel(len(diffuse), 'bloc')} diffusé{accord(len(diffuse))}, "
-          f"{len(exclus)} réservé{accord(len(exclus))} à l'écran "
+          f"{len(exclus)} réservé{accord(len(exclus))} à l’écran "
           f"({', '.join(sorted(exclus))})")
 
     print("9. Une teinte, ses tons")
@@ -4839,7 +4938,7 @@ def _autotest() -> None:
     assert not a.erreurs, a.erreurs
     print(f"   ✓ {len(admis)} tons admis, jetons et séries conformes, figures reconstruites")
 
-    print("10. Branchement d'un classeur aux en-têtes différents")
+    print("10. Branchement d’un classeur aux en-têtes différents")
     import tempfile as _tempfile
     with _tempfile.TemporaryDirectory() as dossier:
         brut = generate_fake_data().head(300).rename(columns={

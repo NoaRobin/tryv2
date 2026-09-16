@@ -50,7 +50,7 @@ export function dateCourte(iso) {
   if (!iso) return '—';
   const [a, m, j] = String(iso).slice(0, 10).split('-').map(Number);
   if (!a || !m || !j) return '—';
-  return `${j} ${MOIS[m - 1]} ${a}`;
+  return `${j === 1 ? '1er' : j} ${MOIS[m - 1]} ${a}`;
 }
 
 export function dateLongue(iso) {
