@@ -284,6 +284,16 @@ a { color: inherit; }
 }
 .periodes button:hover { color: var(--ink); background: var(--b-6); }
 .periodes button[aria-pressed="true"] { color: var(--ink); font-weight: 600; background: var(--b-12); }
+/* Les exercices anciens : un menu, pour que le bandeau tienne sur une ligne. */
+.periodes select.millesimes {
+  font: inherit; font-size: 13px; color: var(--b-72); background: none; border: 0;
+  padding: 4px 9px; cursor: pointer; border-radius: 2px;
+  transition: color var(--duree) var(--sortie), background var(--duree) var(--sortie);
+}
+.periodes select.millesimes:hover { color: var(--ink); background: var(--b-6); }
+.periodes select.millesimes.millesimes--actif {
+  color: var(--ink); font-weight: 600; background: var(--b-12);
+}
 .perimetre__dates { font-size: 13px; color: var(--b-72); white-space: nowrap; }
 .perimetre__compte { margin-left: auto; font-size: 13px; color: var(--b-72); white-space: nowrap; }
 

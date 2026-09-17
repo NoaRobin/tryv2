@@ -3080,6 +3080,33 @@ def repere_historique(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def _jour(v: Any) -> dt.date | None:
+    """Une date, quelle qu’en soit l’écriture : ISO, Timestamp ou date."""
+    if v is None or v is pd.NaT:
+        return None
+    if isinstance(v, str):
+        return dt.date.fromisoformat(v[:10])
+    if isinstance(v, (pd.Timestamp, dt.datetime)):
+        return v.date()
+    return v if isinstance(v, dt.date) else None
+
+
+def periode_revolue(fin_periode: Any, fin_donnees: Any) -> bool:
+    """Vrai quand la période choisie s’arrête avant la fin des données.
+
+    Le carnet classe par statut courant : sur un exercice passé, plus aucun
+    dossier n’est ouvert — ils ont tous été gagnés, perdus ou abandonnés
+    depuis. « Où en sommes-nous » n’a alors pas de réponse, et l’écran comme
+    le rapport ouvrent sur ce que la période a produit.
+
+    La référence est la dernière date du classeur, jamais la date du jour : les
+    données s’arrêtent toujours un peu avant aujourd’hui, et la période courante
+    n’est pas révolue pour autant.
+    """
+    fin, dernier = _jour(fin_periode), _jour(fin_donnees)
+    return fin is not None and dernier is not None and fin < dernier
+
+
 def resume_situation(df: pd.DataFrame, df_total: pd.DataFrame | None = None,
                      repere: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Tout ce que la lecture d’ouverture affiche, calculé ici et nulle part
@@ -5644,10 +5671,16 @@ def _autotest() -> None:
     for cle in ("en_cours", "en_attente"):
         horloges = livre.compartiments[cle][["jours_chez_nous", "jours_attente"]]
         assert horloges.notna().any(axis=1).all(), f"un dossier {cle} sans horloge"
+    # Le présent, c’est la fin des données, pas la date du jour : le classeur
+    # s’arrête toujours un peu avant, sans que la période courante soit révolue.
+    fin = df["date_reception"].max()
+    assert not periode_revolue(fin, fin), "la période courante n’est pas révolue"
+    assert periode_revolue(dt.date(fin.year - 1, 12, 31), fin), "un exercice passé est révolu"
+    assert not periode_revolue(None, fin) and not periode_revolue(fin, None)
     types = repartition_type(df)
     assert types.sum() == len(df) and set(types.index) <= set(TYPE_ORDER)
     print(f"   ✓ {fmt_int(livre.total)} RFP ventilés sans perte, "
-          f"{fmt_int(livre.vivants)} vivants")
+          f"{fmt_int(livre.vivants)} vivants, période courante non révolue")
 
     print("8. Le rapport montre exactement ce que montre l’écran")
     # La promesse du produit : aucun bloc, aucun indicateur réservé à l’écran.

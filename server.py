@@ -144,16 +144,17 @@ def _periodes_disponibles() -> list[dict[str, str]]:
     if ETAT.df.empty:
         return []
     d_min, d_max = _bornes_donnees()
-    # Chaque exercice présent dans les données se choisit d’un clic : la
-    # période voulue, année par année. Les trois derniers sont nommés en
-    # toutes lettres, les plus anciens par leur seul millésime.
+    # Chaque exercice présent dans les données se choisit. Les trois derniers
+    # sont nommés en toutes lettres et restent sous la main ; les millésimes
+    # plus anciens passent dans un menu, sinon le bandeau tient sur deux lignes.
     annees = list(range(d_max.year, d_min.year - 1, -1))
-    return ([{"cle": "12m", "libelle": "12 derniers mois"},
-             {"cle": "24m", "libelle": "24 derniers mois"},
-             {"cle": "36m", "libelle": "36 derniers mois"}]
-            + [{"cle": str(a), "libelle": f"Exercice {a}" if i < 3 else str(a)}
+    return ([{"cle": "12m", "libelle": "12 derniers mois", "groupe": "glissante"},
+             {"cle": "24m", "libelle": "24 derniers mois", "groupe": "glissante"},
+             {"cle": "36m", "libelle": "36 derniers mois", "groupe": "glissante"}]
+            + [{"cle": str(a), "libelle": f"Exercice {a}" if i < 3 else str(a),
+                "groupe": "exercice" if i < 3 else "millesime"}
                for i, a in enumerate(annees)]
-            + [{"cle": "tout", "libelle": "Tout l’historique"}])
+            + [{"cle": "tout", "libelle": "Tout l’historique", "groupe": "tout"}])
 
 
 def _bornes_periode(cle: str, date_min: str | None, date_max: str | None
@@ -305,7 +306,8 @@ def analyse(request: Request,
     precedente = filtres.periode_precedente()
     sortie = {
         "filtres": {"periode": cle_periode, "date_min": filtres.date_min, "date_max": filtres.date_max,
-                    "dims": filtres.dims, "description": filtres.describe(), "actif": filtres.actif},
+                    "dims": filtres.dims, "description": filtres.describe(), "actif": filtres.actif,
+                    "revolue": core.periode_revolue(filtres.date_max, _bornes_donnees()[1])},
         "periode_precedente": {"date_min": precedente.date_min, "date_max": precedente.date_max},
         "granularite": gran, "esg_mode": esg,
         "n": int(len(sel)),

@@ -37,7 +37,9 @@ export function rendreSituation(ctx) {
   // Un bloc absent (une seule année, pas de classe d'actifs…) ne laisse ni trou
   // ni numéro perdu : seuls les blocs rendus sont ajoutés, dans cet ordre.
   const blocs = [
-    blocOuverts(ctx),
+    // Un exercice passé n'a plus de dossier ouvert : le bloc serait vide à tous
+    // les coups. Il ne s'affiche pas, et ne consomme donc pas de numéro.
+    analyse.filtres && analyse.filtres.revolue ? null : blocOuverts(ctx),
     blocCarnet(ctx),
     blocIndicateurs(ctx),
     blocFigure(ctx, 'entonnoir', 'Le chemin des appels d’offres', margeEntonnoir(ctx)),
@@ -61,23 +63,31 @@ function lede(ctx) {
   const attente = c.compartiments.en_attente || { n: 0, encours: 0 };
   const perdus = c.compartiments.perdus || { n: 0, encours: 0 };
 
+  // Période révolue : plus aucun dossier n'est ouvert, la phrase s'ouvre donc
+  // sur ce que la période a produit, sans évoquer un présent qui n'existe pas.
+  const revolue = !!(analyse.filtres && analyse.filtres.revolue);
+
   const p = h('p.lede');
-  p.append(`Au ${dateCourte(ctx.meta.aujourdhui)}, `);
-  if (c.vivants) {
-    p.append(nombre(entier(c.vivants), () => ctx.listeOuverts(), 'Voir les appels d’offres ouverts'));
-    p.append(` appel${c.vivants > 1 ? 's' : ''} d’offres ${c.vivants > 1 ? 'sont ouverts' : 'est ouvert'} pour `);
-    p.append(h('b', { texte: euros(r.encours_en_jeu), style: { fontWeight: 500 } }));
-    p.append(' d’encours');
-    const detail = [];
-    if (redaction.n) detail.push(`${entier(redaction.n)} en rédaction (${euros(redaction.encours)})`);
-    if (attente.n) detail.push(`${entier(attente.n)} en attente de décision (${euros(attente.encours)})`);
-    if (detail.length) p.append(` : ${detail.join(', ')}`);
-    p.append('. ');
-  } else {
-    p.append('aucun appel d’offres n’est ouvert. ');
+  if (!revolue) {
+    p.append(`Au ${dateCourte(ctx.meta.aujourdhui)}, `);
+    if (c.vivants) {
+      p.append(nombre(entier(c.vivants), () => ctx.listeOuverts(), 'Voir les appels d’offres ouverts'));
+      p.append(` appel${c.vivants > 1 ? 's' : ''} d’offres ${c.vivants > 1 ? 'sont ouverts' : 'est ouvert'} pour `);
+      p.append(h('b', { texte: euros(r.encours_en_jeu), style: { fontWeight: 500 } }));
+      p.append(' d’encours');
+      const detail = [];
+      if (redaction.n) detail.push(`${entier(redaction.n)} en rédaction (${euros(redaction.encours)})`);
+      if (attente.n) detail.push(`${entier(attente.n)} en attente de décision (${euros(attente.encours)})`);
+      if (detail.length) p.append(` : ${detail.join(', ')}`);
+      p.append('. ');
+    } else {
+      p.append('aucun appel d’offres n’est ouvert. ');
+    }
   }
 
-  const suite = h('span.attenue');
+  // Sur une période révolue la phrase de période porte seule : elle n'appuie
+  // plus un état du jour, elle est l'état.
+  const suite = revolue ? p : h('span.attenue');
   suite.append(`Du ${dateCourte(analyse.filtres.date_min)} au ${dateCourte(analyse.filtres.date_max)}, `);
   if (r.tranches) {
     suite.append(nombre(entier(r.gagnes), () => ctx.listeCompartiment('gagnes'), 'Voir les mandats remportés'));
@@ -85,12 +95,12 @@ function lede(ctx) {
     suite.append(nombre(entier(perdus.n), () => ctx.listeCompartiment('perdus'), 'Voir les dossiers perdus'));
     suite.append(` perdu${perdus.n > 1 ? 's' : ''} (${euros(r.encours_perdu)}) sur ${entier(r.tranches)} tranchés. `);
   } else {
-    suite.append('aucun appel d’offres n’a encore été tranché. ');
+    suite.append(`aucun appel d’offres n’a${revolue ? '' : ' encore'} été tranché. `);
   }
   suite.append('Le pôle a aussi traité ');
   suite.append(nombre(entier(r.dd), () => aller('dd'), 'Ouvrir la due diligence'));
   suite.append(` questionnaire${r.dd > 1 ? 's' : ''} de due diligence.`);
-  p.append(suite);
+  if (!revolue) p.append(suite);
   return p;
 }
 

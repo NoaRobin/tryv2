@@ -150,6 +150,23 @@ function barrePerimetre() {
   return barre;
 }
 
+/** Les exercices les plus anciens tiennent dans un menu : une quinzaine de
+ *  millésimes en ligne pousseraient le reste du bandeau sur une deuxième ligne. */
+function menuMillesimes(millesimes) {
+  const choisi = millesimes.find(p => p.cle === App.etat.periode);
+  const menu = h('select.millesimes', {
+    'aria-label': 'Exercice',
+    onchange: (e) => {
+      if (e.target.value) majEtat({ periode: e.target.value, date_min: null, date_max: null });
+    },
+  });
+  menu.append(h('option', { value: '', disabled: true }, 'Exercice…'));
+  for (const p of millesimes) menu.append(h('option', { value: p.cle }, p.libelle));
+  menu.value = choisi ? choisi.cle : '';
+  if (choisi) menu.classList.add('millesimes--actif');
+  return menu;
+}
+
 function peindrePerimetre() {
   const int = document.getElementById('perimetre-int');
   if (!int) return;
@@ -157,12 +174,21 @@ function peindrePerimetre() {
   int.append(h('span.perimetre__cle', { texte: 'Périmètre' }));
 
   const periodes = h('div.periodes', { role: 'group', 'aria-label': 'Période' });
+  const millesimes = App.meta.periodes.filter(p => p.groupe === 'millesime');
+  let menuPose = false;
   for (const p of App.meta.periodes) {
+    if (p.groupe === 'millesime') continue;
+    // Le menu des millésimes suit les exercices nommés, avant « Tout l'historique ».
+    if (p.groupe === 'tout' && millesimes.length && !menuPose) {
+      periodes.append(menuMillesimes(millesimes));
+      menuPose = true;
+    }
     periodes.append(h('button', {
       type: 'button', 'aria-pressed': String(p.cle === App.etat.periode),
       onclick: () => majEtat({ periode: p.cle, date_min: null, date_max: null }),
     }, p.libelle));
   }
+  if (millesimes.length && !menuPose) periodes.append(menuMillesimes(millesimes));
   if (App.etat.periode === 'perso') {
     periodes.append(h('button', { type: 'button', 'aria-pressed': 'true' }, 'Période choisie'));
   }

@@ -724,7 +724,7 @@ def _pied(gauche: str, droite: str = "") -> str:
 
 
 # ------------------------------------------------------------- ouverture ----
-def _ouverture_html(analyse: core.Analysis, livre: dict, resume: dict) -> str:
+def _ouverture_html(analyse: core.Analysis, livre: dict, resume: dict, revolue: bool) -> str:
     """La phrase calculée, les trois chiffres du matin, et la marge qui porte
     la forme des douze derniers mois."""
     comp = livre["compartiments"]
@@ -732,23 +732,27 @@ def _ouverture_html(analyse: core.Analysis, livre: dict, resume: dict) -> str:
     perdus = comp["perdus"]
     vivants = livre["vivants"]
 
-    phrase = [f"Au {core.fmt_date_courte(dt.date.today())}, "]
-    if vivants:
-        phrase.append(f"{core.fmt_int(vivants)} appel{core.accord(vivants)} d’offres "
-                      f"{'sont ouverts' if vivants > 1 else 'est ouvert'} pour ")
-        phrase.append(f'<b>{_e(core.fmt_encours(resume["encours_en_jeu"]))}</b> d’encours')
-        detail = []
-        if redaction["n"]:
-            detail.append(f'{core.fmt_int(redaction["n"])} en rédaction '
-                          f'({core.fmt_encours(redaction["encours"])})')
-        if attente["n"]:
-            detail.append(f'{core.fmt_int(attente["n"])} en attente de décision '
-                          f'({core.fmt_encours(attente["encours"])})')
-        if detail:
-            phrase.append(" : " + ", ".join(detail))
-        phrase.append(". ")
-    else:
-        phrase.append("aucun appel d’offres n’est ouvert. ")
+    # Sur une période révolue, rien n’est plus ouvert : la phrase s’ouvre alors
+    # sur ce que la période a produit, sans parler d’un présent qui n’existe pas.
+    phrase: list[str] = []
+    if not revolue:
+        phrase.append(f"Au {core.fmt_date_courte(dt.date.today())}, ")
+        if vivants:
+            phrase.append(f"{core.fmt_int(vivants)} appel{core.accord(vivants)} d’offres "
+                          f"{'sont ouverts' if vivants > 1 else 'est ouvert'} pour ")
+            phrase.append(f'<b>{_e(core.fmt_encours(resume["encours_en_jeu"]))}</b> d’encours')
+            detail = []
+            if redaction["n"]:
+                detail.append(f'{core.fmt_int(redaction["n"])} en rédaction '
+                              f'({core.fmt_encours(redaction["encours"])})')
+            if attente["n"]:
+                detail.append(f'{core.fmt_int(attente["n"])} en attente de décision '
+                              f'({core.fmt_encours(attente["encours"])})')
+            if detail:
+                phrase.append(" : " + ", ".join(detail))
+            phrase.append(". ")
+        else:
+            phrase.append("aucun appel d’offres n’est ouvert. ")
 
     debut = analyse.filtres.date_min or resume.get("date_min_donnees")
     fin = analyse.filtres.date_max or resume.get("date_max_donnees")
@@ -761,11 +765,14 @@ def _ouverture_html(analyse: core.Analysis, livre: dict, resume: dict) -> str:
                      f'({core.fmt_encours(resume["encours_perdu"])}) sur '
                      f'{core.fmt_int(resume["tranches"])} tranchés. ')
     else:
-        suite.append("aucun appel d’offres n’a encore été tranché. ")
+        suite.append(f"aucun appel d’offres n’a{'' if revolue else ' encore'} été tranché. ")
     suite.append(f'Le pôle a aussi traité {core.fmt_int(resume["dd"])} '
                  f'questionnaire{core.accord(resume["dd"])} de due diligence.')
-    lede = (f'<p class="lede">{"".join(phrase)}'
-            f'<span class="attenue">{"".join(suite)}</span></p>')
+    # Sur une période révolue, la phrase de période porte seule : elle n’appuie
+    # plus un état du jour, elle est l’état.
+    corps = ("".join(suite) if revolue
+             else f'{"".join(phrase)}<span class="attenue">{"".join(suite)}</span>')
+    lede = f'<p class="lede">{corps}</p>'
 
     # Les chiffres du matin : ce qui est encore ouvert, ce qui est acquis.
     matin = []
@@ -1094,9 +1101,17 @@ def _vue_ensemble_html(analyse: core.Analysis, pages: dict, indice: int) -> tupl
     """La vue d’ensemble entière, dans l’ordre de l’écran."""
     livre = core.carnet_detaille(analyse.df)
     resume = core.resume_situation(analyse.df, analyse.df_total)
-    morceaux = [_ouverture_html(analyse, livre, resume)]
+    # La fin des données sert de présent : une période qui s’arrête avant est
+    # révolue, et n’a plus aucun dossier ouvert à montrer.
+    total = analyse.df_total if analyse.df_total is not None else analyse.df
+    revolue = core.periode_revolue(analyse.filtres.date_max,
+                                   total["date_reception"].max() if len(total) else None)
+    morceaux = [_ouverture_html(analyse, livre, resume, revolue)]
 
-    morceaux.append(_bloc_ouverts(livre))
+    # Le bloc des ouverts serait vide à tous les coups sur une période révolue.
+    # Il ne s’affiche pas, et ne consomme donc pas de numéro.
+    if not revolue:
+        morceaux.append(_bloc_ouverts(livre))
     morceaux.append(_bloc_carnet(livre, resume))
     morceaux.append(_bloc_indicateurs(analyse))
     bloc, indice = _bloc_figure(analyse, "entonnoir",
