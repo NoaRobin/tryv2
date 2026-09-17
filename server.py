@@ -168,6 +168,8 @@ def _bornes_periode(cle: str, date_min: str | None, date_max: str | None
         return max(d_min, ancre.date()), d_max
     if cle.isdigit() and len(cle) == 4:
         a = int(cle)
+        if a < d_min.year or a > d_max.year:
+            raise ValueError(f"aucune donnée sur l’exercice {a}")
         return max(d_min, dt.date(a, 1, 1)), min(d_max, dt.date(a, 12, 31))
     return d_min, d_max
 
@@ -369,7 +371,7 @@ def dossier(identifiant: int) -> JSONResponse:
     autres = ETAT.df[(ETAT.df["client"] == client) & (ETAT.df.index != identifiant)]
     d["autres_dossiers_client"] = _dossiers(
         autres.sort_values("date_reception", ascending=False).head(12),
-        ["date_reception", "famille", "type_demande", "resultat", "classe_actifs", "fonds",
+        ["date_reception", "famille", "resultat", "classe_actifs", "fonds",
          "montant_potentiel"])
     d["n_dossiers_client"] = int(len(autres)) + 1
     return JSONResponse(_propre(d))

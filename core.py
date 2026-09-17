@@ -15,6 +15,7 @@ import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_HALF_UP
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -785,17 +786,23 @@ NBSP = " "
 ESP_UNITE = NBSP
 
 
+def _arrondi(x: Any, n: int) -> Decimal:
+    """Arrondi au demi-SUPÉRIEUR (loin de zéro), la règle de toLocaleString en
+    JavaScript : l’écran et le rapport écrivent le même nombre pour 90,5."""
+    return Decimal(repr(float(x))).quantize(Decimal(1).scaleb(-n), rounding=ROUND_HALF_UP)
+
+
 def fmt_int(x: Any, unite: str = "") -> str:
     if x is None or (isinstance(x, float) and not math.isfinite(x)) or pd.isna(x):
         return "—"
-    s = f"{int(round(float(x))):,}".replace(",", NBSP)
+    s = f"{int(_arrondi(x, 0)):,}".replace(",", NBSP)
     return f"{s}{ESP_UNITE}{unite}" if unite else s
 
 
 def fmt_dec(x: Any, n: int = 1, unite: str = "") -> str:
     if x is None or (isinstance(x, float) and not math.isfinite(x)) or pd.isna(x):
         return "—"
-    s = f"{float(x):,.{n}f}".replace(",", "\x00").replace(".", ",").replace("\x00", NBSP)
+    s = f"{_arrondi(x, n):,.{n}f}".replace(",", "\x00").replace(".", ",").replace("\x00", NBSP)
     return f"{s}{ESP_UNITE}{unite}" if unite else s
 
 
@@ -879,7 +886,7 @@ def pluriel(n: Any, singulier: str, forme_pluriel: str | None = None) -> str:
     """« 1 dossier », « 7 dossiers » — le nombre et son nom, accordés."""
     marque = accord(n)
     mot = (forme_pluriel or singulier + "s") if marque else singulier
-    return f"{fmt_int(n)} {mot}"
+    return f"{fmt_int(n)}{NBSP}{mot}"
 
 
 def fmt_date_longue(d: Any) -> str:
@@ -2456,6 +2463,10 @@ def agg_mensuel(df: pd.DataFrame) -> pd.DataFrame:
         delai_median=("delai_calendaire", "median"),
         delai_q1=("delai_calendaire", lambda s: s.quantile(0.25)),
         delai_q3=("delai_calendaire", lambda s: s.quantile(0.75)),
+        # En jours ouvrés : la seule base comparable au délai cible.
+        delai_ouvre_median=("delai_ouvre", "median"),
+        delai_ouvre_q1=("delai_ouvre", lambda s: s.quantile(0.25)),
+        delai_ouvre_q3=("delai_ouvre", lambda s: s.quantile(0.75)),
         sla_cible=("sla_cible", "mean"),
         taux_sla=("dans_sla", "mean"),
         montant=("montant_potentiel", "sum"),
@@ -2960,7 +2971,7 @@ def repartition_type(df: pd.DataFrame) -> pd.Series:
 #  imprimée dans le rapport ne peuvent pas diverger — elles sortent d’ici.
 # =============================================================================
 COLONNES_DOSSIER = [
-    "numero", "date_reception", "date_envoi", "famille", "type_demande", "statut", "resultat",
+    "numero", "date_reception", "date_envoi", "famille", "statut", "resultat",
     "client", "segment", "type_client", "pays", "consultant", "commercial", "analyste",
     "relecteur", "fonds", "classe_actifs", "sous_classe_actifs", "forme_juridique", "expertise",
     "langue", "montant_potentiel", "a_remis", "a_preselection", "a_oral", "soutenance", "sri",
@@ -2969,7 +2980,7 @@ COLONNES_DOSSIER = [
 ]
 LIBELLES_DOSSIER = {
     "date_reception": "Réception", "date_envoi": "Envoi", "famille": "Famille",
-    "type_demande": "Type", "statut": "Statut", "resultat": "Résultat", "client": "Client",
+    "statut": "Statut", "resultat": "Résultat", "client": "Client",
     "consultant": "Consultant", "type_client": "Type de client", "pays": "Pays",
     "fonds": "Fonds de référence", "classe_actifs": "Classe d’actifs",
     "sous_classe_actifs": "Sous-classe", "forme_juridique": "Forme juridique",
@@ -3255,7 +3266,7 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
     kpis.append(Kpi("succes", "Taux de succès", fmt_pct(taux, 1),
                     None if pd.isna(taux) else float(taux),
                     detail=(f"{fmt_int(gagnes)} sur {fmt_int(tranches)} tranchés · "
-                            f"IC 95 % {fmt_pct(ic[0], 0)}–{fmt_pct(ic[1], 0)}"),
+                            f"IC 95{NBSP}% {fmt_pct(ic[0], 0)}–{fmt_pct(ic[1], 0)}"),
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                     cible="rfp", groupe="commercial",
                     aide="Gagnés / (gagnés + perdus). Les dossiers en attente de décision "
@@ -4249,7 +4260,7 @@ def _bloc_resultats_rfp(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     taux, gagnes, tranches, ic = taux_succes_rfp(df)
     attente = int(comptes.get(RESULTAT_ATTENTE, 0))
     accroche = (f"{fmt_int(gagnes)} mandats remportés sur {fmt_int(tranches)} dossiers "
-                f"tranchés, soit {fmt_pct(taux, 1)} (IC 95 % {fmt_pct(ic[0], 0)}–"
+                f"tranchés, soit {fmt_pct(taux, 1)} (IC 95{NBSP}% {fmt_pct(ic[0], 0)}–"
                 f"{fmt_pct(ic[1], 0)}).")
     if attente:
         accroche += (f" {pluriel(attente, 'dossier')} encore en attente "
@@ -4836,9 +4847,9 @@ def _bloc_aum_annuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
 
     meilleure = annuel["aum"].idxmax()
     part = annuel["aum"].max() / max(annuel["aum"].sum(), 1)
-    accroche = (f"{fmt_dec(annuel['aum'].sum(), 0, 'M€')} remportés sur la période. "
+    accroche = (f"{fmt_encours(annuel['aum'].sum())} remportés sur la période. "
                 f"L’année {meilleure} en concentre {fmt_pct(part, 0)} à elle seule "
-                f"({fmt_dec(annuel['aum'].max(), 0, 'M€')}).")
+                f"({fmt_encours(annuel['aum'].max())}).")
     tableau = annuel.reset_index()
     tableau["ticket"] = (annuel["aum"] / annuel["mandats"]).to_numpy()
     tableau.columns = ["Année", "Encours remporté (M€)", "Mandats", "Ticket moyen (M€)"]
@@ -5061,9 +5072,12 @@ def _bloc_esg_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
 #  BLOCS CONSERVÉS — analyses de la version précédente, reclassées
 # =============================================================================
 def _bloc_delai_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if mensuel.empty or mensuel["delai_median"].notna().sum() < 3:
+    if mensuel.empty or mensuel["delai_ouvre_median"].notna().sum() < 3:
         return None
-    m = _mois_complets(mensuel).dropna(subset=["delai_median"])
+    # Ce bloc compare au délai cible : il raisonne en jours OUVRÉS, et le dit.
+    m = _mois_complets(mensuel).dropna(subset=["delai_ouvre_median"])
+    m = m.assign(delai_median=m["delai_ouvre_median"], delai_q1=m["delai_ouvre_q1"],
+                 delai_q3=m["delai_ouvre_q3"])
     fig = _fig(360, hovermode="x unified")
     fig.add_trace(go.Scatter(x=m["mois"], y=m["delai_q1"], mode="lines",
                              line=dict(width=0), hoverinfo="skip", showlegend=False))
@@ -5558,7 +5572,7 @@ def build_analysis(df: pd.DataFrame, filtres: Filters | None = None,
 COLONNES_EXPORT: dict[str, str] = {
     "date_reception": "Date de réception",
     "date_envoi": "Date d’envoi",
-    "type_demande": "Type",
+    "famille": "Type",
     "statut": "Statut",
     "client": "Client",
     "segment": "Segment",
@@ -5578,7 +5592,7 @@ COLONNES_EXPORT: dict[str, str] = {
 
 CHAMPS_RECHERCHE = ("client", "consultant", "pays", "fonds", "classe_actifs",
                     "sous_classe_actifs", "expertise", "analyste", "relecteur", "commercial",
-                    "segment", "type_demande", "statut", "resultat", "forme_juridique", "numero")
+                    "segment", "famille", "statut", "resultat", "forme_juridique", "numero")
 
 
 def cle_recherche(texte: str) -> str:

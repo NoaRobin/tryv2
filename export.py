@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import html
 from pathlib import Path
 from typing import Any
@@ -46,7 +47,7 @@ VAR_ETAT = {"en_cours": "--redaction", "en_attente": "--attente", "gagnes": "--g
 # Une variation se lit à son signe, à sa flèche ET à son mot — jamais à sa
 # couleur.
 FLECHES = {"hausse": "▲", "baisse": "▼", "plat": ""}
-MOTS_SENS = {"bon": "favorable", "mauvais": "défavorable", "neutre": "sans effet"}
+MOTS_SENS = {"bon": "favorable", "mauvais": "défavorable", "neutre": ""}
 
 
 def bibliotheque_plotly() -> str:
@@ -454,16 +455,15 @@ def _spark(serie: list[float], largeur: int = 88, hauteur: int = 22) -> str:
 
 
 def _delta_html(kpi: core.Kpi) -> str:
-    """La variation : signe, flèche et mot. Jamais une couleur."""
+    """La variation : flèche, valeur, mot — le gabarit de l’écran (ui.js,
+    delta()), jamais une couleur."""
     if not kpi.delta_affichage:
         return ""
-    if kpi.delta_direction == "plat":
-        return f'<span class="fait__delta">{_e(kpi.delta_affichage)}</span>'
     fleche = FLECHES.get(kpi.delta_direction, "")
     mot = MOTS_SENS.get(kpi.delta_sens, "")
-    mot_html = f" <span>{_e(mot)}</span>" if mot else ""
-    return (f'<span class="fait__delta">{fleche} {_e(kpi.delta_affichage)}'
-            f'{mot_html}</span>')
+    suite = f" · {_e(mot)} sur la période précédente" if mot else " sur la période précédente"
+    return (f'<span class="fait__delta">{fleche + ESP if fleche else ""}{_e(kpi.delta_affichage)}'
+            f'<span>{suite}</span></span>')
 
 
 def _fait_html(kpi: core.Kpi) -> str:
@@ -520,7 +520,7 @@ def _analyse_html(bloc: core.Block, indice: int, premiere: bool = False) -> str:
     note = f'<div class="analyse__note">{_e(bloc.note)}</div>' if bloc.note else ""
     tete_compte = f'<span class="analyse__compte">{_e(compte)}</span>' if compte else "<span></span>"
     classe = "analyse analyse--premiere" if premiere else "analyse"
-    return (f'<section class="{classe}" id="bloc-{_e(bloc.cle)}">'
+    return (f'<section class="{classe}" id="analyse-{_e(bloc.cle)}">'
             f'<div class="analyse__tete"><h3 class="analyse__titre">{_e(bloc.titre)}</h3>'
             f'{tete_compte}</div>'
             f'<p class="analyse__accroche">{_e(bloc.accroche)}</p>'
@@ -650,10 +650,13 @@ def _marge(titre: str, *paragraphes: str) -> str:
     return tete + corps
 
 
-def _bloc(numero: int, cle: str, titre: str, corps: str, marge: str = "") -> str:
+NUMERO = "\x00NUMERO\x00"     # posé par _bloc, remplacé une fois les blocs vides écartés
+
+
+def _bloc(cle: str, titre: str, corps: str, marge: str = "") -> str:
     return (f'<section class="bloc" id="bloc-{_e(cle)}">'
             f'<div class="bloc__corps">'
-            f'<div class="bloc__tete"><span class="bloc__num">{numero:02d}</span>'
+            f'<div class="bloc__tete"><span class="bloc__num">{NUMERO}</span>'
             f'<span class="cle cle--ink">{_e(titre)}</span></div>'
             f'{corps}</div>'
             f'<div class="bloc__marge">{marge}</div></section>')
@@ -729,7 +732,7 @@ def _ouverture_html(analyse: core.Analysis, livre: dict, resume: dict) -> str:
     perdus = comp["perdus"]
     vivants = livre["vivants"]
 
-    phrase = [f"Au {core.fmt_date_courte(analyse.genere_le)}, "]
+    phrase = [f"Au {core.fmt_date_courte(dt.date.today())}, "]
     if vivants:
         phrase.append(f"{core.fmt_int(vivants)} appel{core.accord(vivants)} d’offres "
                       f"{'sont ouverts' if vivants > 1 else 'est ouvert'} pour ")
@@ -795,8 +798,9 @@ def _marge_ouverture(resume: dict) -> str:
             f'title="{_e(s["libelle"])} : {core.fmt_int(s["valeur"])}"></i>' for s in serie)
         dernier = serie[-1]
         legende = ", ".join(f"{x['libelle']} : {x['valeur']}" for x in serie)
+        total = sum(x["valeur"] for x in serie)
         texte = (f'De <b>{_e(serie[0]["libelle"])}</b> à <b>{_e(dernier["libelle"])}</b>, '
-                 f'{core.fmt_int(resume["rfp"])} appels d’offres reçus.')
+                 f'{core.pluriel(total, "appel d’offres reçu", "appels d’offres reçus")}.')
         if dernier["en_cours"]:
             texte += " Le dernier mois est en cours : sa barre est hachurée."
         morceaux.append(
@@ -819,7 +823,7 @@ def _marge_ouverture(resume: dict) -> str:
 
 
 # -------------------------------------------------- appels d’offres ouverts --
-def _bloc_ouverts(numero: int, livre: dict) -> str:
+def _bloc_ouverts(livre: dict) -> str:
     o = livre["ouverts"]
     marge = _marge(
         "Lecture",
@@ -831,9 +835,10 @@ def _bloc_ouverts(numero: int, livre: dict) -> str:
         "depuis la remise pour un dossier en attente. Le trait s’encre au-delà de quatre "
         "mois d’attente.")
     if not o["n"]:
-        return _bloc(numero, "ouverts", "Les appels d’offres ouverts",
+        return _bloc("ouverts", "Les appels d’offres ouverts",
                      '<p class="prose">Aucun appel d’offres n’est ouvert sur ce périmètre.</p>',
-                     marge)
+                     _marge("Lecture", "Un appel d’offres est ouvert tant qu’il est en rédaction "
+                            "chez nous ou remis au client sans décision."))
     dossiers = o["dossiers"]
     maxi = max([(d["jours_chez_nous"] if d["statut"] == core.STATUT_EN_COURS
                  else d["jours_attente"]) or 0 for d in dossiers] + [1])
@@ -869,15 +874,13 @@ def _bloc_ouverts(numero: int, livre: dict) -> str:
     intro = (f'<p class="prose">{core.pluriel(o["n"], "appel d’offres", "appels d’offres")} '
              f'ouvert{core.accord(o["n"])}, <b>{_e(core.fmt_encours(o["encours"]))}</b> '
              f'd’encours en jeu. L’encours le plus important d’abord.</p>')
-    pied = _pied("Chaque ligne est un appel d’offres ouvert, sa fiche est dans "
-                 "l’application.",
-                 f'{core.pluriel(o["n"], "dossier")} · {core.fmt_encours(o["encours"])}')
-    return _bloc(numero, "ouverts", "Les appels d’offres ouverts",
+    pied = _pied("", f'{core.pluriel(o["n"], "dossier")} · {core.fmt_encours(o["encours"])}')
+    return _bloc("ouverts", "Les appels d’offres ouverts",
                  intro + table + pied, marge)
 
 
 # ----------------------------------------------------------------- carnet ---
-def _bloc_carnet(numero: int, livre: dict, resume: dict) -> str:
+def _bloc_carnet(livre: dict, resume: dict) -> str:
     comp = livre["compartiments"]
     total_n = sum(comp[c]["n"] for c, _, _ in core.COMPARTIMENTS)
     total_e = sum(comp[c]["encours"] for c, _, _ in core.COMPARTIMENTS)
@@ -925,7 +928,7 @@ def _bloc_carnet(numero: int, livre: dict, resume: dict) -> str:
     corps = (f'{intro}<div class="carnet"><div class="carnet__rubans">{"".join(rubans)}</div>'
              f'<div class="carnet__colonnes">{colonnes}</div></div>'
              + (f'<div class="identites">{identites}</div>' if identites else ""))
-    return _bloc(numero, "carnet", "Le carnet d’appels d’offres", corps, _marge(
+    return _bloc("carnet", "Le carnet d’appels d’offres", corps, _marge(
         "Lecture",
         "Le ruban du haut compte les dossiers, un trait par dossier. Celui du bas porte "
         "les mêmes états en encours : c’est lui qui dit où se joue l’argent.",
@@ -935,25 +938,18 @@ def _bloc_carnet(numero: int, livre: dict, resume: dict) -> str:
 
 
 # ------------------------------------------------------------ indicateurs ---
-def _bloc_indicateurs(numero: int, analyse: core.Analysis) -> str:
+def _bloc_indicateurs(analyse: core.Analysis) -> str:
     choisis = analyse.kpis_situation
     if not choisis:
         return ""
     faits = "".join(_fait_html(k) for k in choisis)
-    fenetre = analyse.stats.get("comparaison")
-    comparaison = ""
-    if fenetre:
-        comparaison = ("Les variations sont mesurées face à la période précédente de même "
-                       f"durée ({core.fmt_date(fenetre[0])} → {core.fmt_date(fenetre[1])}).")
     definitions = [f"<b>{_e(k.libelle)}</b> — {_e(k.aide)}" for k in choisis[:5] if k.aide]
-    return _bloc(numero, "indicateurs", "Les indicateurs",
-                 f'<div class="faits">{faits}</div>'
-                 f'<p class="censure">{_e(core.NOTE_CENSURE)}</p>',
-                 _marge("Définitions", *definitions, comparaison))
+    return _bloc("indicateurs", "Les indicateurs", f'<div class="faits">{faits}</div>',
+                 _marge("Définitions", *definitions))
 
 
 # --------------------------------------------------------------- relances ---
-def _bloc_relances(numero: int, livre: dict) -> str:
+def _bloc_relances(livre: dict) -> str:
     liste = livre["a_relancer"]
     if not liste["n"]:
         return ""
@@ -976,7 +972,7 @@ def _bloc_relances(numero: int, livre: dict) -> str:
     pied = _pied(f"{core.pluriel(liste['n'], 'dossier')} à relancer"
                  + (f" — {core.fmt_int(reste)} au-delà de cette liste" if reste > 0 else ""),
                  core.fmt_encours(liste["encours"]) if liste["encours"] else "")
-    return _bloc(numero, "relances", "Ce qu’il faut relancer", intro + table + pied, _marge(
+    return _bloc("relances", "Ce qu’il faut relancer", intro + table + pied, _marge(
         "Repères",
         "<b>Attente</b> compte les jours depuis la remise de la réponse au client ; pour un "
         "<b>délai cible dépassé</b>, depuis la réception, de notre côté. Le délai cible, lui, "
@@ -986,7 +982,7 @@ def _bloc_relances(numero: int, livre: dict) -> str:
 
 
 # --------------------------------------------------------------- constats ---
-def _bloc_constats(numero: int, analyse: core.Analysis, livre: dict, pages: dict) -> str:
+def _bloc_constats(analyse: core.Analysis, livre: dict, pages: dict) -> str:
     # Le constat « à relancer » a son propre bloc : le répéter ferait lire deux
     # fois la même phrase.
     constats = ([i for i in analyse.insights if i.cle != "attention"]
@@ -1003,7 +999,7 @@ def _bloc_constats(numero: int, analyse: core.Analysis, livre: dict, pages: dict
                        f'</button></div>')
         lignes.append(f'<div class="constat"><div class="constat__t">{_e(i.texte)}</div>'
                       f'<div class="constat__a">{droite}</div></div>')
-    return _bloc(numero, "constats", "Ce qui a changé", "".join(lignes), _marge(
+    return _bloc("constats", "Ce qui a changé", "".join(lignes), _marge(
         "Méthode",
         "Chaque constat est produit par une fonction d’analyse sur le périmètre courant. "
         "Aucune phrase n’est écrite d’avance : si la donnée ne permet pas de l’établir, "
@@ -1012,7 +1008,7 @@ def _bloc_constats(numero: int, analyse: core.Analysis, livre: dict, pages: dict
 
 
 # ----------------------------------------------------------------- listes ---
-def _bloc_listes(numero: int, livre: dict) -> str:
+def _bloc_listes(livre: dict) -> str:
     comp = livre["compartiments"]
     onglets = [(cle, libelle, sens) for cle, libelle, sens in core.COMPARTIMENTS
                if cle in ("gagnes", "perdus", "sans_suite") and comp[cle]["n"] > 0]
@@ -1042,16 +1038,16 @@ def _bloc_listes(numero: int, livre: dict) -> str:
                         f'{_pied(gauche, core.fmt_encours(d["encours"]))}</div>')
     corps = (f'<div data-onglets><div class="onglets" role="tablist">{"".join(boutons)}</div>'
              f'{"".join(panneaux)}</div>')
-    return _bloc(numero, "listes", "Les dossiers tranchés", corps, _marge(
+    return _bloc("listes", "Les dossiers tranchés", corps, _marge(
         "Repères",
         "Les mandats remportés, les dossiers perdus et ceux restés sans suite, la décision "
         "la plus récente d’abord.",
         "Les listes montrent les premiers dossiers de chaque compartiment ; le total exact "
-        "figure sous chaque tableau."))
+        "est sous chaque tableau."))
 
 
 # ---------------------------------------------------- un bloc à figure ------
-def _bloc_figure(numero: int, analyse: core.Analysis, cle: str, titre: str,
+def _bloc_figure(analyse: core.Analysis, cle: str, titre: str,
                  marge: str, indice: int) -> tuple[str, int]:
     """Un bloc de l’écran dont le corps est une figure — ou son tableau quand
     le bloc n’en a pas."""
@@ -1064,16 +1060,12 @@ def _bloc_figure(numero: int, analyse: core.Analysis, cle: str, titre: str,
     if bloc.figure is not None:
         corps.append(f'<div class="figure">{_figure_html(bloc, indice)}</div>')
         indice += 1
-        if bloc.tableau is not None and not bloc.tableau.empty:
-            corps.append(f'<details><summary>Voir les données '
-                         f'({core.pluriel(len(bloc.tableau), "ligne")})</summary>'
-                         f'<div class="tableau">{_tableau_html(bloc.tableau)}</div></details>')
     elif bloc.tableau is not None:
         corps.append(f'<div class="tableau tableau--pleine">'
                      f'{_tableau_html(bloc.tableau, bloc.triable)}</div>')
     if bloc.note:
         corps.append(f'<div class="analyse__note">{_e(bloc.note)}</div>')
-    return _bloc(numero, cle, titre, "".join(corps), marge), indice
+    return _bloc(cle, titre, "".join(corps), marge), indice
 
 
 def _marge_entonnoir(resume: dict) -> str:
@@ -1109,8 +1101,8 @@ def _marge_annees() -> str:
         "Une ligne par exercice du périmètre choisi, lue comme la vue d’ensemble : reçus, "
         "tranchés, encours. Un clic sur un en-tête trie le tableau sur cette colonne ; un "
         "second clic inverse l’ordre.",
-        "Le rapport suit le périmètre choisi dans l’application : chaque exercice s’y "
-        "ouvre un par un.")
+        "Le périmètre se choisit exercice par exercice ; l’écran et le rapport suivent le "
+        "même.")
 
 
 def _marge_classes() -> str:
@@ -1118,8 +1110,8 @@ def _marge_classes() -> str:
         "Lecture",
         "Ce que chaque classe d’actifs reçoit, remporte et porte d’encours. L’encours "
         "remporté le plus haut d’abord ; un clic sur un en-tête trie autrement.",
-        "Le détail par classe — taux de succès, encours, intervalles — est dans les pages "
-        "« Appels d’offres » et « Encours & gains ».")
+        "Le détail par classe — taux de succès, encours, intervalles — est dans « Appels "
+        "d’offres » et « Encours & gains ».")
 
 
 def _marge_trimestres() -> str:
@@ -1135,37 +1127,41 @@ def _vue_ensemble_html(analyse: core.Analysis, pages: dict, indice: int) -> tupl
     livre = core.carnet_detaille(analyse.df)
     resume = core.resume_situation(analyse.df, analyse.df_total)
     morceaux = [_ouverture_html(analyse, livre, resume)]
-    numero = 0
 
-    def suivant() -> int:
-        nonlocal numero
-        numero += 1
-        return numero
-
-    morceaux.append(_bloc_ouverts(suivant(), livre))
-    morceaux.append(_bloc_carnet(suivant(), livre, resume))
-    morceaux.append(_bloc_indicateurs(suivant(), analyse))
+    morceaux.append(_bloc_ouverts(livre))
+    morceaux.append(_bloc_carnet(livre, resume))
+    morceaux.append(_bloc_indicateurs(analyse))
     if livre["a_relancer"]["n"]:
-        morceaux.append(_bloc_relances(suivant(), livre))
-    bloc, indice = _bloc_figure(suivant(), analyse, "entonnoir",
+        morceaux.append(_bloc_relances(livre))
+    bloc, indice = _bloc_figure(analyse, "entonnoir",
                                 "Le chemin des appels d’offres", _marge_entonnoir(resume), indice)
     morceaux.append(bloc)
-    morceaux.append(_bloc_constats(suivant(), analyse, livre, pages))
-    morceaux.append(_bloc_listes(suivant(), livre))
-    bloc, indice = _bloc_figure(suivant(), analyse, "annees", "Année par année",
+    morceaux.append(_bloc_constats(analyse, livre, pages))
+    morceaux.append(_bloc_listes(livre))
+    bloc, indice = _bloc_figure(analyse, "annees", "Année par année",
                                 _marge_annees(), indice)
     morceaux.append(bloc)
-    bloc, indice = _bloc_figure(suivant(), analyse, "classes_actifs", "Les classes d’actifs",
+    bloc, indice = _bloc_figure(analyse, "classes_actifs", "Les classes d’actifs",
                                 _marge_classes(), indice)
     morceaux.append(bloc)
-    bloc, indice = _bloc_figure(suivant(), analyse, "decomposition",
+    bloc, indice = _bloc_figure(analyse, "decomposition",
                                 "La décomposition de l’activité",
                                 _marge_decomposition(resume), indice)
     morceaux.append(bloc)
-    bloc, indice = _bloc_figure(suivant(), analyse, "trimestre",
+    bloc, indice = _bloc_figure(analyse, "trimestre",
                                 "Les huit derniers trimestres", _marge_trimestres(), indice)
     morceaux.append(bloc)
-    return "".join(m for m in morceaux if m), indice
+    # Les numéros ne sont posés qu’aux blocs présents : 01, 02, 03… sans trou,
+    # exactement comme l’écran, qui ne compte pas un bloc qu’il n’affiche pas.
+    sortie, numero = [], 0
+    for m in morceaux:
+        if not m:
+            continue
+        if NUMERO in m:
+            numero += 1
+            m = m.replace(NUMERO, f"{numero:02d}", 1)
+        sortie.append(m)
+    return "".join(sortie), indice
 
 
 # =============================================================================
@@ -1284,7 +1280,13 @@ SCRIPT = r"""
     var ths = Array.prototype.slice.call(table.querySelectorAll('thead th'));
     ths.forEach(function (th, i) {
       var trier = function () {
-        var sens = th.getAttribute('aria-sort') === 'descending' ? 'ascending' : 'descending';
+        var tbody0 = table.tBodies[0];
+        var numerique = Array.prototype.some.call(tbody0.rows, function (tr) {
+          return tr.cells[i] && valeurTri(tr.cells[i].textContent).n !== null;
+        });
+        var actuel = th.getAttribute('aria-sort');
+        var sens = actuel ? (actuel === 'descending' ? 'ascending' : 'descending')
+                          : (numerique ? 'descending' : 'ascending');
         ths.forEach(function (x) { x.removeAttribute('aria-sort'); });
         th.setAttribute('aria-sort', sens);
         var tbody = table.tBodies[0];

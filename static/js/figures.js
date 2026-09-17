@@ -191,7 +191,13 @@ export function activerTri(racine) {
     const ths = Array.from(table.querySelectorAll('thead th'));
     ths.forEach((th, i) => {
       const trier = () => {
-        const sens = th.getAttribute('aria-sort') === 'descending' ? 'ascending' : 'descending';
+        // Une colonne de nombres se lit d'abord du plus grand au plus petit,
+        // une colonne de texte de A à Z ; un second clic inverse.
+        const numerique = Array.from(table.tBodies[0].rows)
+          .some(tr => tr.cells[i] && valeurTri(tr.cells[i].textContent).n !== null);
+        const actuel = th.getAttribute('aria-sort');
+        const sens = actuel ? (actuel === 'descending' ? 'ascending' : 'descending')
+          : (numerique ? 'descending' : 'ascending');
         ths.forEach(x => x.removeAttribute('aria-sort'));
         th.setAttribute('aria-sort', sens);
         const tbody = table.tBodies[0];

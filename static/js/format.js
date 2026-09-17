@@ -2,8 +2,11 @@
 // Les chiffres AFFICHÉS viennent du moteur déjà formatés (kpi.affichage) ;
 // ces fonctions servent aux compléments calculés côté écran (listes, fiches).
 
-const NBSP = ' ';       // espace insécable : avant les unités
-const FINE = ' ';       // espace fine insécable : séparateur de milliers, avant %
+// Une seule espace insécable (U+00A0), avant les unités comme entre les
+// milliers : la même que core.NBSP, pour que « 1 384 » soit la même chaîne à
+// l'écran et dans le rapport. La fine (U+202F) mesure moins de deux pixels.
+const NBSP = '\u00a0';
+const FINE = NBSP;
 
 export function entier(x) {
   if (x === null || x === undefined || Number.isNaN(Number(x))) return '—';

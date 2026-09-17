@@ -108,7 +108,7 @@ export function carnet(donnees, compartiments, tons, { surClic } = {}) {
       ruban.append(h('i.carnet__seg', {
         classe: TEXTURES[c.cle] || '',
         style: { flex: String(v), background: tons[c.cle], minWidth: '3px' },
-        title: `${c.libelle} : ${champ === 'n' ? entier(v) + ' dossiers' : euros(v)}`,
+        title: `${c.libelle} : ${champ === 'n' ? pluriel(v, 'dossier') : euros(v)}`,
       }));
     }
     ligne.append(ruban);

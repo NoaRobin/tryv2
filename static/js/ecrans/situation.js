@@ -34,17 +34,22 @@ export function rendreSituation(ctx) {
   ouverture.append(margeOuverture(ctx));
   ecran.append(ouverture);
 
-  ecran.append(blocOuverts(ctx));
-  ecran.append(blocCarnet(ctx));
-  ecran.append(blocIndicateurs(ctx));
-  if (analyse.carnet.a_relancer.n) ecran.append(blocRelances(ctx));
-  ecran.append(blocFigure(ctx, 'entonnoir', 'Le chemin des appels d’offres', margeEntonnoir(ctx)));
-  ecran.append(blocConstats(ctx));
-  ecran.append(blocListes(ctx));
-  ecran.append(blocFigure(ctx, 'annees', 'Année par année', margeAnnees()));
-  ecran.append(blocFigure(ctx, 'classes_actifs', 'Les classes d’actifs', margeClasses()));
-  ecran.append(blocFigure(ctx, 'decomposition', 'La décomposition de l’activité', margeDecomposition(ctx)));
-  ecran.append(blocFigure(ctx, 'trimestre', 'Les huit derniers trimestres', margeTrimestres(ctx)));
+  // Un bloc absent (pas de relance, une seule année…) ne laisse ni trou ni
+  // numéro perdu : seuls les blocs rendus sont ajoutés, dans cet ordre.
+  const blocs = [
+    blocOuverts(ctx),
+    blocCarnet(ctx),
+    blocIndicateurs(ctx),
+    analyse.carnet.a_relancer.n ? blocRelances(ctx) : null,
+    blocFigure(ctx, 'entonnoir', 'Le chemin des appels d’offres', margeEntonnoir(ctx)),
+    blocConstats(ctx),
+    blocListes(ctx),
+    blocFigure(ctx, 'annees', 'Année par année', margeAnnees()),
+    blocFigure(ctx, 'classes_actifs', 'Les classes d’actifs', margeClasses()),
+    blocFigure(ctx, 'decomposition', 'La décomposition de l’activité', margeDecomposition(ctx)),
+    blocFigure(ctx, 'trimestre', 'Les huit derniers trimestres', margeTrimestres(ctx)),
+  ];
+  for (const b of blocs) if (b) ecran.append(b);
   return ecran;
 }
 
@@ -101,8 +106,10 @@ function ligneDuMatin(ctx) {
     h('b', {}, nombre(valeur, action)), ' ', libelle,
     appui ? h('span', { texte: ` · ${appui}` }) : null);
 
-  ligne.append(fait(entier(attente.n), `en attente de décision`,
-    () => ctx.listeCompartiment('en_attente'), attente.encours ? euros(attente.encours) : ''));
+  if (attente.n) {
+    ligne.append(fait(entier(attente.n), `en attente de décision`,
+      () => ctx.listeCompartiment('en_attente'), attente.encours ? euros(attente.encours) : ''));
+  }
   if (c.a_relancer.n) {
     ligne.append(fait(entier(c.a_relancer.n), 'à relancer', () => ctx.listeCompartiment('a_relancer'),
       c.a_relancer.encours ? euros(c.a_relancer.encours) : ''));
@@ -126,7 +133,7 @@ function margeOuverture(ctx) {
     marge.append(barresMensuelles(serie));
     const dernier = serie[serie.length - 1];
     marge.append(h('p.marge-texte', { html:
-      `De <b>${serie[0].libelle}</b> à <b>${dernier.libelle}</b>, ${entier(r.rfp)} appels d’offres reçus.`
+      `De <b>${serie[0].libelle}</b> à <b>${dernier.libelle}</b>, ${pluriel(serie.reduce((s, x) => s + x.valeur, 0), 'appel d’offres reçu', 'appels d’offres reçus')}.`
       + (dernier.en_cours ? ' Le dernier mois est en cours : sa barre est hachurée.' : '') }));
   }
   const rep = r.repere;
@@ -240,7 +247,7 @@ function blocOuverts(ctx) {
 
   const total = h('p.note', { style: { marginTop: '12px', display: 'flex', justifyContent: 'space-between' } },
     h('span', {}, lien('Ouvrir la liste complète', () => ctx.listeOuverts())),
-    h('span', {}, h('b', { texte: `${entier(o.n)} dossiers · ${euros(o.encours)}` })));
+    h('span', {}, h('b', { texte: `${pluriel(o.n, 'dossier')} · ${euros(o.encours)}` })));
 
   return bloc('ouverts', 'Les appels d’offres ouverts', [intro, table, total], margeTexte('Lecture',
     '<b>En rédaction</b> : la réponse est chez nous, non partie. <b>En attente de décision</b> : remise au client, non tranchée.',
@@ -373,13 +380,13 @@ function blocFigure(ctx, cleBloc, titre, marge) {
 function margeAnnees() {
   return margeTexte('Lecture',
     'Une ligne par exercice du périmètre choisi, lue comme la vue d’ensemble : reçus, tranchés, encours. Un clic sur un en-tête trie le tableau sur cette colonne ; un second clic inverse l’ordre.',
-    'Les puces de période, en haut, ouvrent chaque exercice un par un ; le rapport suit le périmètre affiché.');
+    'Le périmètre se choisit exercice par exercice ; l’écran et le rapport suivent le même.');
 }
 
 function margeClasses() {
   return margeTexte('Lecture',
     'Ce que chaque classe d’actifs reçoit, remporte et porte d’encours. L’encours remporté le plus haut d’abord ; un clic sur un en-tête trie autrement.',
-    'Un clic sur une classe, dans les analyses, recalcule tout le périmètre sur elle.');
+    'Le détail par classe — taux de succès, encours, intervalles — est dans « Appels d’offres » et « Encours & gains ».');
 }
 
 function margeEntonnoir(ctx) {
@@ -447,6 +454,6 @@ function blocListes(ctx) {
   peindre();
 
   return bloc('listes', 'Les dossiers tranchés', [barre, zone], margeTexte('Repères',
-    'Les mandats remportés, les dossiers perdus et ceux restés sans suite, la décision la plus récente d’abord. Chaque ligne ouvre la fiche du dossier.',
-    'Les listes montrent les premiers dossiers du compartiment ; « Ouvrir » les affiche tous, avec le filtre déjà posé.'));
+    'Les mandats remportés, les dossiers perdus et ceux restés sans suite, la décision la plus récente d’abord.',
+    'Les listes montrent les premiers dossiers de chaque compartiment ; le total exact est sous chaque tableau.'));
 }
