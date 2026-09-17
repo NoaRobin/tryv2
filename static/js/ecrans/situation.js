@@ -1,7 +1,8 @@
 // situation.js — l'écran d'ouverture : où en sont les appels d'offres.
 //
-// Une note qui se réécrit à chaque changement de périmètre. Le texte EST le
-// résultat du calcul : chaque nombre vient du moteur, et mène à son détail.
+// La lecture du lundi matin. Elle répond d'abord à une question : quels appels
+// d'offres sont ouverts, pour quel encours. Le reste descend en dessous.
+// Chaque nombre vient du moteur et mène à son détail.
 
 import { h, vider, nombre, faits, carnet, identites, tableDossiers, cellulesNom, jauge,
   lien, entier, euros, pluriel, fmtDate, dateCourte } from '../ui.js';
@@ -11,11 +12,11 @@ import { NBSP } from '../format.js';
 const SEUIL_RELANCE = 120;   // jours : au-delà, une décision qui tarde devient une relance
 
 /**
- * @param {object} ctx — { analyse, meta, etat, tonsEtat, aller(ecran, modif), filtrer(dim, valeur),
- *                         ouvrirDossier(id), listeCompartiment(cle) }
+ * @param {object} ctx — { analyse, meta, etat, tonsEtat, aller(ecran), filtrer(dim, valeur),
+ *                         ouvrirDossier(id), listeCompartiment(cle), listeOuverts() }
  */
 export function rendreSituation(ctx) {
-  const { analyse, meta } = ctx;
+  const { analyse } = ctx;
   const r = analyse.resume;
   const ecran = h('div.ecran');
   if (!r) {
@@ -23,8 +24,8 @@ export function rendreSituation(ctx) {
     return ecran;
   }
 
-  // La phrase d’ouverture tient dans la colonne de lecture ; la marge porte la
-  // forme des douze derniers mois et le repère historique.
+  // L'ouverture tient dans la colonne de lecture ; la marge porte la forme des
+  // douze derniers mois et le repère historique.
   const ouverture = h('div.lecture.ouverture');
   const gauche = h('div');
   gauche.append(lede(ctx));
@@ -32,42 +33,113 @@ export function rendreSituation(ctx) {
   ouverture.append(gauche);
   ouverture.append(margeOuverture(ctx));
   ecran.append(ouverture);
+
+  ecran.append(blocOuverts(ctx));
   ecran.append(blocCarnet(ctx));
   ecran.append(blocIndicateurs(ctx));
   if (analyse.carnet.a_relancer.n) ecran.append(blocRelances(ctx));
+  ecran.append(blocFigure(ctx, 'entonnoir', 'Le chemin des appels d’offres', margeEntonnoir(ctx)));
   ecran.append(blocConstats(ctx));
+  ecran.append(blocListes(ctx));
   ecran.append(blocFigure(ctx, 'decomposition', 'La décomposition de l’activité', margeDecomposition(ctx)));
   ecran.append(blocFigure(ctx, 'trimestre', 'Les huit derniers trimestres', margeTrimestres(ctx)));
-  ecran.append(blocListes(ctx));
   return ecran;
 }
 
-/** La marge de l’ouverture : la forme des douze derniers mois, puis le repère
- *  historique — les mêmes grandeurs sur tout l’historique. */
+/* ------------------------------------------------------------ ouverture -- */
+function lede(ctx) {
+  const { analyse, aller } = ctx;
+  const r = analyse.resume;
+  const c = analyse.carnet;
+  const redaction = c.compartiments.en_cours || { n: 0, encours: 0 };
+  const attente = c.compartiments.en_attente || { n: 0, encours: 0 };
+  const perdus = c.compartiments.perdus || { n: 0, encours: 0 };
+
+  const p = h('p.lede');
+  p.append(`Au ${dateCourte(ctx.meta.aujourdhui)}, `);
+  if (c.vivants) {
+    p.append(nombre(entier(c.vivants), () => ctx.listeOuverts(), 'Voir les appels d’offres ouverts'));
+    p.append(` appel${c.vivants > 1 ? 's' : ''} d’offres ${c.vivants > 1 ? 'sont ouverts' : 'est ouvert'} pour `);
+    p.append(h('b', { texte: euros(r.encours_en_jeu), style: { fontWeight: 500 } }));
+    p.append(' d’encours');
+    const detail = [];
+    if (redaction.n) detail.push(`${entier(redaction.n)} en rédaction (${euros(redaction.encours)})`);
+    if (attente.n) detail.push(`${entier(attente.n)} en attente de décision (${euros(attente.encours)})`);
+    if (detail.length) p.append(` : ${detail.join(', ')}`);
+    p.append('. ');
+  } else {
+    p.append('aucun appel d’offres n’est ouvert. ');
+  }
+
+  const suite = h('span.attenue');
+  suite.append(`Du ${dateCourte(analyse.filtres.date_min)} au ${dateCourte(analyse.filtres.date_max)}, `);
+  if (r.tranches) {
+    suite.append(nombre(entier(r.gagnes), () => ctx.listeCompartiment('gagnes'), 'Voir les mandats remportés'));
+    suite.append(` mandat${r.gagnes > 1 ? 's' : ''} remporté${r.gagnes > 1 ? 's' : ''} (${euros(r.encours_remporte)}) et `);
+    suite.append(nombre(entier(perdus.n), () => ctx.listeCompartiment('perdus'), 'Voir les dossiers perdus'));
+    suite.append(` perdu${perdus.n > 1 ? 's' : ''} (${euros(r.encours_perdu)}) sur ${entier(r.tranches)} tranchés. `);
+  } else {
+    suite.append('aucun appel d’offres n’a encore été tranché. ');
+  }
+  suite.append('Le pôle a aussi traité ');
+  suite.append(nombre(entier(r.dd), () => aller('dd'), 'Ouvrir la due diligence'));
+  suite.append(` questionnaire${r.dd > 1 ? 's' : ''} de due diligence.`);
+  p.append(suite);
+  return p;
+}
+
+/** Les trois chiffres du matin : ce qui appelle une action, et ce qui est acquis. */
+function ligneDuMatin(ctx) {
+  const { analyse } = ctx;
+  const r = analyse.resume;
+  const c = analyse.carnet;
+  const attente = c.compartiments.en_attente || { n: 0, encours: 0 };
+  const ligne = h('p.matin');
+  const fait = (valeur, libelle, action, appui) => h('span', {},
+    h('b', {}, nombre(valeur, action)), ' ', libelle,
+    appui ? h('span', { texte: ` · ${appui}` }) : null);
+
+  ligne.append(fait(entier(attente.n), `en attente de décision`,
+    () => ctx.listeCompartiment('en_attente'), attente.encours ? euros(attente.encours) : ''));
+  if (c.a_relancer.n) {
+    ligne.append(fait(entier(c.a_relancer.n), 'à relancer', () => ctx.listeCompartiment('a_relancer'),
+      c.a_relancer.encours ? euros(c.a_relancer.encours) : ''));
+  }
+  const succes = analyse.kpis.find(k => k.cle === 'succes');
+  if (succes && r.tranches) {
+    ligne.append(fait(succes.affichage, 'de succès', () => ctx.aller('rfp'),
+      `${entier(r.gagnes)} sur ${entier(r.tranches)} tranchés`));
+  }
+  return ligne;
+}
+
+/** La marge de l'ouverture : la forme des douze derniers mois, le repère historique. */
 function margeOuverture(ctx) {
-  const { analyse, meta, majEtat } = ctx;
+  const { analyse, majEtat } = ctx;
   const r = analyse.resume;
   const marge = h('div.marge-col');
-  const serie = r.series && r.series.questionnaires;
+  const serie = r.series && r.series.rfp;
   if (serie && serie.length >= 3) {
-    marge.append(h('div.marge-titre', { texte: 'Questionnaires reçus par mois' }));
+    marge.append(h('div.marge-titre', { texte: 'Appels d’offres reçus par mois' }));
     marge.append(barresMensuelles(serie));
     const dernier = serie[serie.length - 1];
     marge.append(h('p.marge-texte', { html:
-      `De <b>${serie[0].libelle}</b> à <b>${dernier.libelle}</b>.`
-      + (dernier.en_cours ? ' Le dernier mois est en cours : sa barre est hachurée, il ne se compare pas.' : '') }));
+      `De <b>${serie[0].libelle}</b> à <b>${dernier.libelle}</b>, ${entier(r.rfp)} appels d’offres reçus.`
+      + (dernier.en_cours ? ' Le dernier mois est en cours : sa barre est hachurée.' : '') }));
   }
   const rep = r.repere;
   if (rep && rep.annee_min) {
     marge.append(h('div.marge-titre', { style: { marginTop: '22px' }, texte: 'Repère' }));
     const p = h('p.marge-texte');
-    p.append(`Depuis ${rep.annee_min}, l’historique compte `);
-    p.append(h('b', { texte: entier(rep.questionnaires) }));
-    p.append(' questionnaires et ');
+    p.append(`Depuis ${rep.annee_min}, `);
     p.append(h('b', { texte: entier(rep.rfp) }));
-    p.append(' appels d’offres, pour un taux de succès de ');
-    p.append(h('b', { texte: (rep.taux_succes * 100).toFixed(1).replace('.', ',') + ' %' }));
-    p.append('.');
+    p.append(' appels d’offres et ');
+    p.append(h('b', { texte: entier(rep.dd) }));
+    p.append(' due diligences, pour un taux de succès de ');
+    p.append(h('b', { texte: (rep.taux_succes * 100).toFixed(1).replace('.', ',') + NBSP + '%' }));
+    p.append(' et ');
+    p.append(h('b', { texte: euros(rep.encours_remporte) }));
+    p.append(' remportés.');
     marge.append(p);
     if (ctx.etat.periode !== 'tout') {
       marge.append(h('p.marge-texte', {},
@@ -97,66 +169,6 @@ function barresMensuelles(serie) {
   return bloc;
 }
 
-/* --------------------------------------------------------------- lede ---- */
-function lede(ctx) {
-  const { analyse, meta, aller } = ctx;
-  const r = analyse.resume;
-  const kpi = (cle) => analyse.kpis.find(k => k.cle === cle);
-  const volume = kpi('questionnaires');
-
-  const p = h('p.lede');
-  p.append(`Du ${dateCourte(analyse.filtres.date_min)} au ${dateCourte(analyse.filtres.date_max)}, le pôle a reçu `);
-  p.append(nombre(entier(r.questionnaires), () => aller('activite'), 'Ouvrir l’activité'));
-  p.append(` questionnaire${r.questionnaires > 1 ? 's' : ''}`);
-  if (volume && volume.delta_affichage && volume.delta_affichage !== 'stable') {
-    const sens = volume.delta_direction === 'hausse' ? 'de plus' : 'de moins';
-    p.append(`, ${volume.delta_affichage.replace('+', '').replace('−', '')} ${sens} que sur la période précédente`);
-  }
-  p.append('. ');
-  const suite = h('span.attenue');
-  suite.append(nombre(entier(r.dd), () => aller('dd'), 'Ouvrir la due diligence'));
-  suite.append(` relèvent de la due diligence, `);
-  suite.append(nombre(entier(r.rfp), () => aller('rfp'), 'Ouvrir les appels d’offres'));
-  suite.append(` sont des appels d’offres`);
-  if (r.tranches) {
-    suite.append(`, dont `);
-    suite.append(nombre(entier(r.gagnes), () => ctx.listeCompartiment('gagnes'), 'Voir les mandats remportés'));
-    suite.append(` remportés sur ${entier(r.tranches)} tranchés.`);
-  } else {
-    suite.append(', aucun encore tranché.');
-  }
-  p.append(suite);
-  return p;
-}
-
-/** Les trois chiffres du matin, sous la phrase : ce qui appelle une action. */
-function ligneDuMatin(ctx) {
-  const { analyse, aller } = ctx;
-  const r = analyse.resume;
-  const c = analyse.carnet;
-  const kpiQuestions = analyse.kpis.find(k => k.cle === 'questions');
-  const ligne = h('p.matin');
-
-  const fait = (valeur, libelle, action, appui) => {
-    const el = h('span', {},
-      h('b', {}, nombre(valeur, action)), ' ', libelle,
-      appui ? h('span', { texte: ` · ${appui}` }) : null);
-    return el;
-  };
-  ligne.append(fait(entier(c.total ? c.vivants : 0), 'dossiers non tranchés',
-    () => ctx.listeCompartiment('en_attente'), `${euros(r.encours_en_jeu)} en jeu`));
-  if (c.a_relancer.n) {
-    ligne.append(fait(entier(c.a_relancer.n), pluriel(c.a_relancer.n, 'dossier').split(NBSP)[1] + ' à relancer',
-      () => ctx.listeCompartiment('a_relancer'),
-      c.a_relancer.encours ? `${euros(c.a_relancer.encours)} concernés` : ''));
-  }
-  if (kpiQuestions) {
-    ligne.append(fait(kpiQuestions.affichage, 'questions traitées', () => aller('activite'),
-      kpiQuestions.detail));
-  }
-  return ligne;
-}
-
 /* ------------------------------------------------------------- blocs ----- */
 let numero = 0;
 
@@ -179,6 +191,60 @@ function margeTexte(titre, ...paragraphes) {
     ...paragraphes.filter(Boolean).map(p => (p instanceof Node ? p : h('p.marge-texte', { html: p })))];
 }
 
+function etapeDe(d) {
+  if (d.a_oral) return 'Oral';
+  if (d.a_preselection) return 'Présélection';
+  if (d.a_remis) return 'Remis';
+  return '—';
+}
+
+/* ---------------------------------------------------- appels d'offres ouverts */
+function blocOuverts(ctx) {
+  const { analyse } = ctx;
+  const o = analyse.carnet.ouverts;
+  if (!o || !o.n) {
+    return bloc('ouverts', 'Les appels d’offres ouverts', [
+      h('p.prose', { texte: 'Aucun appel d’offres n’est ouvert sur ce périmètre.' }),
+    ], margeTexte('Lecture', 'Un appel d’offres est ouvert tant qu’il est en rédaction chez nous ou remis au client sans décision.'));
+  }
+  const maxi = Math.max(...o.dossiers.map(d => (d.statut === 'En cours' ? d.jours_chez_nous : d.jours_attente) || 0), 1);
+  const table = tableDossiers(o.dossiers, [
+    { titre: 'Client', rendu: (d) => cellulesNom(d, ['segment', 'pays']) },
+    { titre: 'Classe d’actifs', attenue: true, rendu: (d) => h('span', {},
+      d.classe_actifs && d.classe_actifs !== 'Non renseigné' ? d.classe_actifs : '—',
+      d.fonds && d.fonds !== 'Non renseigné' ? h('span.cellule-sous', { texte: d.fonds }) : null) },
+    { titre: 'État', rendu: (d) => h('span', {},
+      d.statut === 'En cours' ? 'En rédaction' : 'En attente de décision',
+      h('span.cellule-sous', { texte: `Étape : ${etapeDe(d)}` })) },
+    { titre: 'Depuis', rendu: (d) => {
+      const enRedaction = d.statut === 'En cours';
+      const v = enRedaction ? d.jours_chez_nous : d.jours_attente;
+      if (v === null || v === undefined) return '—';
+      return h('span', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+        jauge(v, maxi, { seuil: enRedaction ? undefined : SEUIL_RELANCE }),
+        h('span.num', { texte: `${entier(v)}${NBSP}j` }));
+    } },
+    { titre: 'Suivi', attenue: true, rendu: (d) => h('span', {},
+      d.commercial && d.commercial !== 'Non renseigné' ? d.commercial : '—',
+      d.consultant && d.consultant !== 'Non renseigné' ? h('span.cellule-sous', { texte: `via ${d.consultant}` }) : null) },
+    { titre: 'Encours', num: true, rendu: (d) => h('b', { texte: euros(d.montant_potentiel), style: { fontWeight: 600 } }) },
+  ], { surLigne: (d) => ctx.ouvrirDossier(d.id) });
+
+  const intro = h('p.prose');
+  intro.append(`${pluriel(o.n, 'appel d’offres', 'appels d’offres')} ouvert${o.n > 1 ? 's' : ''}, `);
+  intro.append(h('b', { texte: euros(o.encours), style: { fontWeight: 500 } }));
+  intro.append(' d’encours en jeu. L’encours le plus important d’abord.');
+
+  const total = h('p.note', { style: { marginTop: '12px', display: 'flex', justifyContent: 'space-between' } },
+    h('span', {}, lien('Ouvrir la liste complète', () => ctx.listeOuverts())),
+    h('span', {}, h('b', { texte: `${entier(o.n)} dossiers · ${euros(o.encours)}` })));
+
+  return bloc('ouverts', 'Les appels d’offres ouverts', [intro, table, total], margeTexte('Lecture',
+    '<b>En rédaction</b> : la réponse est chez nous, non partie. <b>En attente de décision</b> : remise au client, non tranchée.',
+    '<b>Étape</b> reprend les colonnes Step_1, Step_2 et ORAL_RFP du classeur : dossier remis, présélection, soutenance orale.',
+    '<b>Depuis</b> compte les jours depuis la réception pour un dossier en rédaction, depuis la remise pour un dossier en attente. Le trait s’encre au-delà de quatre mois d’attente.'));
+}
+
 /* ------------------------------------------------------------ carnet ----- */
 function blocCarnet(ctx) {
   const { analyse, meta, tonsEtat } = ctx;
@@ -187,13 +253,12 @@ function blocCarnet(ctx) {
 
   const intro = h('p.prose', {});
   intro.append(`Des ${entier(c.total)} appels d’offres du périmètre, `);
-  intro.append(nombre(entier(c.vivants), () => ctx.listeCompartiment('en_attente')));
-  intro.append(` ne sont pas tranchés, pour ${euros(r.encours_en_jeu)} d’encours en jeu. `);
-  const g = c.compartiments.gagnes.n;
-  if (g) {
-    intro.append(nombre(entier(g), () => ctx.listeCompartiment('gagnes')));
-    intro.append(` mandat${g > 1 ? 's' : ''} remporté${g > 1 ? 's' : ''}, ${euros(r.encours_remporte)} d’encours.`);
-  }
+  intro.append(nombre(entier(c.vivants), () => ctx.listeOuverts()));
+  intro.append(` ne sont pas tranchés (${euros(r.encours_en_jeu)}), `);
+  intro.append(nombre(entier(c.compartiments.gagnes.n), () => ctx.listeCompartiment('gagnes')));
+  intro.append(` remporté${c.compartiments.gagnes.n > 1 ? 's' : ''} (${euros(r.encours_remporte)}), `);
+  intro.append(nombre(entier(c.compartiments.perdus.n), () => ctx.listeCompartiment('perdus')));
+  intro.append(` perdu${c.compartiments.perdus.n > 1 ? 's' : ''} (${euros(r.encours_perdu)}).`);
 
   const corps = [intro, carnet(c, meta.compartiments, tonsEtat, {
     surClic: (cle) => ctx.listeCompartiment(cle),
@@ -202,7 +267,7 @@ function blocCarnet(ctx) {
   if (ids) corps.push(ids);
 
   return bloc('carnet', 'Le carnet d’appels d’offres', corps, margeTexte('Lecture',
-    'Le ruban du haut compte les dossiers, un trait par dossier. Celui du bas porte les mêmes états en encours : il montre qu’un dossier sans suite peut peser plus que plusieurs dossiers perdus.',
+    'Le ruban du haut compte les dossiers, un trait par dossier. Celui du bas porte les mêmes états en encours : c’est lui qui dit où se joue l’argent.',
     '<b>En rédaction</b> et <b>en attente de décision</b> partagent le même résultat, mais appellent deux actions différentes : produire d’un côté, relancer de l’autre.',
     meta.note_censure));
 }
@@ -210,13 +275,14 @@ function blocCarnet(ctx) {
 /* ------------------------------------------------------- indicateurs ----- */
 function blocIndicateurs(ctx) {
   const { analyse, aller } = ctx;
-  const ordre = ['succes', 'aum', 'pipeline', 'rfp_gagnes', 'delai_rfp', 'delai_dd', 'sla', 'esg'];
+  const ordre = ['succes', 'aum', 'aum_perdu', 'pipeline', 'oral', 'preselection',
+    'delai_rfp', 'sla', 'delai_dd', 'esg'];
   const choisis = ordre.map(c => analyse.kpis.find(k => k.cle === c)).filter(Boolean);
   if (!choisis.length) return null;
   return bloc('indicateurs', 'Les indicateurs', [
     faits(choisis, { surClic: (k) => aller(k.cible === 'explorateur' ? 'dossiers' : k.cible) }),
   ], margeTexte('Définitions',
-    ...choisis.slice(0, 4).map(k => `<b>${k.libelle}</b> — ${k.aide}`)));
+    ...choisis.slice(0, 5).map(k => `<b>${k.libelle}</b> — ${k.aide}`)));
 }
 
 /* --------------------------------------------------------- relances ----- */
@@ -231,7 +297,7 @@ function blocRelances(ctx) {
     + (liste.encours ? ` ${euros(liste.encours)} d’encours concernés.` : '') });
 
   const table = tableDossiers(liste.dossiers, [
-    { titre: 'Dossier', rendu: (d) => cellulesNom(d) },
+    { titre: 'Dossier', rendu: (d) => cellulesNom(d, ['segment', 'pays']) },
     { titre: 'Motif', attenue: true, rendu: (d) => d.en_retard ? 'délai cible dépassé' : 'sans réponse du client' },
     { titre: 'Attente', rendu: (d) => {
       const v = d.en_retard ? d.anciennete_ouvree : d.jours_attente;
@@ -242,7 +308,7 @@ function blocRelances(ctx) {
   ], { surLigne: (d) => ctx.ouvrirDossier(d.id) });
 
   const pied = h('p', { style: { marginTop: '14px' } },
-    lien(`Ouvrir les ${entier(liste.n)} dossiers`, () => ctx.listeCompartiment('a_relancer')));
+    lien(`Ouvrir ${liste.n > 1 ? `les ${entier(liste.n)} dossiers` : 'le dossier'}`, () => ctx.listeCompartiment('a_relancer')));
 
   return bloc('relances', 'Ce qu’il faut relancer', [intro, table, pied], margeTexte('Repères',
     `<b>Attente</b> compte les jours depuis la remise de la réponse au client ; <b>délai cible dépassé</b> compte les jours ouvrés depuis la réception, de notre côté.`,
@@ -253,8 +319,8 @@ function blocRelances(ctx) {
 function blocConstats(ctx) {
   const { analyse, aller } = ctx;
   const liste = h('div');
-  // Le constat « à relancer » a son propre bloc, avec ses dossiers : le
-  // répéter ici ferait lire deux fois la même phrase.
+  // Le constat « à relancer » a son propre bloc : le répéter ici ferait lire
+  // deux fois la même phrase.
   const constats = analyse.carnet.a_relancer.n
     ? analyse.insights.filter(i => i.cle !== 'attention')
     : analyse.insights;
@@ -299,6 +365,18 @@ function blocFigure(ctx, cleBloc, titre, marge) {
   return el;
 }
 
+function margeEntonnoir(ctx) {
+  const e = (ctx.analyse.resume.entonnoir || []);
+  const remis = e.find(x => x.cle === 'remis');
+  const gagnes = e.find(x => x.cle === 'gagnes');
+  return margeTexte('Lecture',
+    'Chaque barre est une étape franchie ; le pourcentage à gauche est la part de l’étape précédente qui passe. L’encours suit les dossiers.',
+    remis && gagnes && remis.n
+      ? `Sur ${entier(remis.n)} dossiers remis, ${entier(gagnes.n)} ont abouti à un mandat : ${((gagnes.n / remis.n) * 100).toFixed(0).replace('.', ',')}${NBSP}% des remis.`
+      : null,
+    'Les dossiers encore ouverts comptent dans les étapes qu’ils ont franchies, pas dans les remportés.');
+}
+
 function margeDecomposition(ctx) {
   const e = ctx.analyse.resume.echelle;
   return margeTexte('Lecture',
@@ -307,7 +385,7 @@ function margeDecomposition(ctx) {
     'La barre sous chaque nombre est sa part du total reçu.');
 }
 
-function margeTrimestres(ctx) {
+function margeTrimestres() {
   return margeTexte('Lecture',
     'Quatre mouvements, et seulement ceux qu’on sait dater : ce qui arrive, ce qui part, ce que cela rapporte. Une décision client n’a pas de date dans la base : elle ne figure pas ici.',
     'Le trimestre en cours est atténué : il est incomplet, il ne se compare pas.');
@@ -315,14 +393,12 @@ function margeTrimestres(ctx) {
 
 /* ----------------------------------------------------------- listes ----- */
 function blocListes(ctx) {
-  const { analyse, meta, tonsEtat } = ctx;
+  const { analyse, meta } = ctx;
   const c = analyse.carnet;
   const onglets = [
-    ...meta.compartiments.filter(x => ['en_attente', 'gagnes', 'perdus'].includes(x.cle))
+    ...meta.compartiments.filter(x => ['gagnes', 'perdus', 'sans_suite'].includes(x.cle))
       .map(x => ({ cle: x.cle, libelle: x.libelle, n: c.compartiments[x.cle].n,
         encours: c.compartiments[x.cle].encours, dossiers: c.compartiments[x.cle].dossiers, sens: x.sens })),
-    { cle: 'a_relancer', libelle: 'À relancer', n: c.a_relancer.n, encours: c.a_relancer.encours,
-      dossiers: c.a_relancer.dossiers, sens: 'délai dépassé ou décision qui tarde' },
   ].filter(o => o.n > 0);
   if (!onglets.length) return null;
 
@@ -339,17 +415,11 @@ function blocListes(ctx) {
       }, o.libelle, h('span.compte', { texte: `${entier(o.n)} · ${euros(o.encours)}` })));
     }
     const o = onglets.find(x => x.cle === actif);
-    const attente = o.cle === 'en_attente' || o.cle === 'a_relancer';
-    const maxi = Math.max(...o.dossiers.map(d => d.jours_attente || d.anciennete_ouvree || 0), 1);
     const colonnes = [
-      { titre: 'Client', rendu: (d) => cellulesNom(d, ['pays', 'classe_actifs']) },
-      attente
-        ? { titre: 'Attente', rendu: (d) => {
-          const v = d.jours_attente ?? d.anciennete_ouvree;
-          return v === null || v === undefined ? '—' : h('span', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
-            jauge(v, maxi, { seuil: SEUIL_RELANCE }), h('span.num', { texte: `${entier(v)}${NBSP}j` }));
-        } }
-        : { titre: 'Décision', attenue: true, rendu: (d) => fmtDate(d.date_envoi) },
+      { titre: 'Client', rendu: (d) => cellulesNom(d, ['segment', 'pays']) },
+      { titre: 'Classe d’actifs', attenue: true, rendu: (d) => d.classe_actifs || '—' },
+      { titre: 'Étape atteinte', attenue: true, rendu: (d) => etapeDe(d) },
+      { titre: 'Décision', attenue: true, rendu: (d) => fmtDate(d.date_envoi) },
       { titre: 'Encours', num: true, rendu: (d) => euros(d.montant_potentiel) },
     ];
     zone.append(tableDossiers(o.dossiers, colonnes, { surLigne: (d) => ctx.ouvrirDossier(d.id) }));
@@ -360,7 +430,7 @@ function blocListes(ctx) {
   };
   peindre();
 
-  return bloc('listes', 'Les dossiers nommés', [barre, zone], margeTexte('Repères',
-    'Chaque ligne ouvre la fiche du dossier : ses dates, son analyste, son encours, et les autres dossiers du même client.',
+  return bloc('listes', 'Les dossiers tranchés', [barre, zone], margeTexte('Repères',
+    'Les mandats remportés, les dossiers perdus et ceux restés sans suite, l’encours le plus important d’abord. Chaque ligne ouvre la fiche du dossier.',
     'Les listes montrent les premiers dossiers du compartiment ; « Ouvrir » les affiche tous, avec le filtre déjà posé.'));
 }

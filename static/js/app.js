@@ -27,14 +27,11 @@ const App = {
 async function demarrer() {
   const racine = document.getElementById('app');
   try {
-    // La marque est un SVG inline : elle hérite de la couleur du texte et ne
-    // demande aucune requête supplémentaire une fois en cache.
-    const [meta, logo] = await Promise.all([
-      api.get('/api/meta'),
-      fetch('/assets/logo.svg').then(r => (r.ok ? r.text() : '')).catch(() => ''),
-    ]);
+    // La marque voyage avec les métadonnées : un SVG inline s’il a été déposé
+    // dans assets/, une chaîne vide sinon — aucune requête qui puisse échouer.
+    const meta = await api.get('/api/meta');
     App.meta = meta;
-    window.__LOGO__ = logo;
+    window.__LOGO__ = (meta.marque && meta.marque.logo) || '';
   } catch (e) {
     racine.append(h('div.enveloppe', {}, message(`L’application n’a pas pu démarrer : ${e.message}`)));
     return;
@@ -90,9 +87,17 @@ function barreMarque() {
 
   const marque = h('a.marque', { href: '?', 'aria-label': `${m.nom} ${m.activite}`,
     onclick: (e) => { e.preventDefault(); aller('lecture'); } });
-  const logo = h('span.marque__logo');
-  logo.innerHTML = window.__LOGO__ || '';
-  marque.append(logo);
+  if (window.__LOGO__) {
+    // Le fichier officiel de la charte, s’il a été déposé dans assets/.
+    const logo = h('span.marque__logo');
+    logo.innerHTML = window.__LOGO__;
+    marque.append(logo);
+  } else {
+    // Sans fichier officiel, la maison est nommée, pas dessinée.
+    marque.append(h('span.marque__texte', {},
+      h('span.marque__nom', { texte: m.nom }),
+      h('span.marque__activite', { texte: m.activite })));
+  }
   marque.append(h('span.marque__produit', { texte: App.meta.produit }));
   int.append(marque);
 
@@ -298,6 +303,16 @@ function contexte() {
       App.fermerFiche = await ouvrirFiche(id, contexte());
       App.fermerFiche = null;
     },
+    listeOuverts: () => {
+      let etat = { ...Etat.cloner(App.etat), ecran: 'dossiers', q: '', attention: false };
+      etat = Etat.retirerFiltre(etat, 'statut');
+      etat = Etat.retirerFiltre(etat, 'resultat');
+      etat = Etat.ajouterFiltre(etat, 'famille', 'RFP');
+      etat = Etat.ajouterFiltre(etat, 'statut', 'En cours');
+      etat = Etat.ajouterFiltre(etat, 'statut', 'Envoyé');
+      App.etat = etat;
+      rafraichir();
+    },
     listeCompartiment: (cle) => {
       const modif = { ecran: 'dossiers', q: '', attention: false };
       let etat = { ...Etat.cloner(App.etat), ...modif };
@@ -306,7 +321,11 @@ function contexte() {
       const statuts = { en_cours: 'En cours', en_attente: 'Envoyé', gagnes: 'Gagné',
         perdus: 'Perdu', sans_suite: 'Abandonné' };
       if (cle === 'a_relancer') etat.attention = true;
-      else if (statuts[cle]) etat = Etat.ajouterFiltre(etat, 'statut', statuts[cle]);
+      else if (statuts[cle]) {
+        etat = Etat.retirerFiltre(etat, 'famille');
+        etat = Etat.ajouterFiltre(etat, 'famille', 'RFP');
+        etat = Etat.ajouterFiltre(etat, 'statut', statuts[cle]);
+      }
       App.etat = etat;
       rafraichir();
     },

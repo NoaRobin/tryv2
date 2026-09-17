@@ -48,129 +48,250 @@ USE_FAKE_DATA: bool | None = None
 DATA_PATH = "données.xlsx"    # chemin par défaut si aucun branchement n’est écrit
 SHEET_NAME = None             # onglet par défaut : le premier du classeur
 
+# Les intitulés attendus sont ceux du classeur de suivi du pôle. À gauche le
+# champ interne, à droite l’en-tête tel qu’il figure dans le fichier. La
+# correspondance est tolérante (casse, accents, espaces, tirets, unités entre
+# parenthèses) et COLUMN_ALIASES accepte les intitulés voisins.
 COLUMN_MAP = {
-    "date_reception": "Date_Reception",   # [BRANCHEMENT] adapter aux noms réels
-    "date_envoi": "Date_Envoi",
-    "type_demande": "Type",               # RFP, RFI, DDQ
-    "client": "Client_Nom",
-    "consultant": "Consultant",           # cabinet intermédiaire, souvent distinct du client
-    "type_client": "Type_Client",         # institutionnel, distributeur, consultant
-    "pays": "Pays",
-    "fonds": "Fonds",                     # fonds de référence du questionnaire
-    "classe_actifs": "Classe_Actifs",
-    "sous_classe_actifs": "Sous_Classe_Actifs",
-    "forme_juridique": "Forme_Juridique",  # SICAV, FCP, mandat, fonds dédié…
-    "expertise": "Expertise",             # équipe de gestion sollicitée
-    "statut": "Statut",                   # en cours, envoyé, gagné, perdu, abandonné
-    "analyste": "Analyste_Nom",
-    "nb_questions": "Nombre_Questions",
-    "part_esg": "Part_ESG",               # part ESG du questionnaire, en % ou en tranche
-    "langue": "Langue",
-    "montant_potentiel": "Montant_EUR",   # encours en jeu ; devient l’AUM gagné si Gagné
+    "numero": "Numero",                    # identifiant de la ligne
+    "annee_source": "Année",               # année de rattachement (secours si la date manque)
+    "mois_source": "Month",                # mois de rattachement, 1 à 12
+    "date_reception": "Date de réception",
+    "date_envoi": "Date de fin",           # remise, finalisation ou envoi de la réponse
+    "client": "Client",
+    "segment": "Segment",                  # fonds de pension, assureur, banque privée…
+    "type_client": "Type de client",       # institutionnel, distributeur, international
+    "pays": "Country",
+    "consultant": "Consultant",            # cabinet intermédiaire ; « None » = aucun
+    "analyste": "Writer",                  # rédacteur de la réponse
+    "relecteur": "Reviewer",               # relecteur ou valideur
+    "type_demande": "Type",                # RFP ou Due Diligence
+    "montant_potentiel": "Volume",         # ENCOURS en jeu, en millions d’euros
+    "etape_1": "Step_1",                   # étape 1 du processus RFP (binaire)
+    "etape_2": "Step_2",                   # étape 2 du processus RFP (binaire)
+    "oral": "ORAL_RFP",                    # soutenance orale (binaire)
+    "statut": "Status",                    # Done, In progress, Cancelled
+    "qvidian": "Qvidian Update",           # mise à jour de la base de contenus
+    "resultat_brut": "Result",             # Won, Lost, NA
+    "expertise": "Expertise",              # High Conviction, Open Architecture, Corporate
+    "forme_juridique": "Legal form",       # fonds ouvert, mandat, fonds dédié
+    "classe_actifs": "Asset class",
+    "sous_classe_actifs": "Sub-asset class",
+    "sri": "SRI",                          # dimension ISR : Yes / No
+    "part_esg": "% ESG",                   # tranche ou pourcentage
+    "fonds": "Reference fund",             # fonds ou solution de référence présentée
+    "commercial": "Sales",                 # commercial responsable
+    "langue": "Language",                  # FR, EN
+    "nb_questions": "Nombre de questions", # facultatif : absent du classeur du pôle
 }
 
-# [BRANCHEMENT] Intitulés alternatifs tolérés pour chaque champ, en plus de
-# COLUMN_MAP. Sert quand le classeur reçu ne porte pas exactement les mêmes
-# en-têtes : inutile de modifier COLUMN_MAP, il suffit d’ajouter l’intitulé ici.
-# La comparaison ignore casse, accents, espaces, tirets et underscores.
+# Intitulés voisins reconnus pour chaque champ, en plus de COLUMN_MAP. Sert
+# quand un export ne porte pas exactement les mêmes en-têtes : inutile de
+# modifier COLUMN_MAP, il suffit d’ajouter l’intitulé ici. La comparaison ignore
+# casse, accents, espaces, tirets, underscores et unités entre parenthèses.
 COLUMN_ALIASES: dict[str, list[str]] = {
-    "date_reception": ["date de reception", "date réception", "date de réception",
-                       "date demande", "date d’arrivee", "received date", "date in"],
-    "date_envoi": ["date de envoi", "date d’envoi", "date reponse", "date de réponse",
-                   "date rendu", "sent date", "date out"],
-    "type_demande": ["type de demande", "type demande", "nature de la demande",
-                     "nature", "request type", "categorie"],
-    "client": ["nom du client", "client", "prospect", "contrepartie", "client name"],
-    "type_client": ["type de client", "segment client", "segment", "canal", "client type"],
-    "pays": ["pays du client", "country", "juridiction", "zone"],
-    "fonds": ["fonds", "nom du fonds", "strategie", "stratégie", "fund", "produit"],
-    "classe_actifs": ["classe d’actifs", "classe actifs", "asset class", "classe"],
-    "statut": ["statut", "statut du dossier", "etat", "état", "etat du dossier",
-               "etat d’avancement", "avancement", "status", "issue", "resultat", "résultat",
-               "result", "outcome", "decision", "décision", "stage", "phase"],
-    "analyste": ["analyste", "nom de l’analyste", "responsable", "redacteur",
-                 "rédacteur", "owner", "assigne a"],
-    "nb_questions": ["nombre de questions", "nb questions", "questions", "volume questions",
-                     "number of questions"],
-    "langue": ["langue", "langue de reponse", "langue de réponse", "language"],
-    "montant_potentiel": ["montant", "montant eur", "montant potentiel", "encours",
-                          "encours potentiel", "aum", "ticket", "amount"],
+    "numero": ["numero", "numéro", "n°", "no", "id", "identifiant", "ref", "reference"],
+    "annee_source": ["annee", "année", "year", "exercice", "annee de rattachement"],
+    "mois_source": ["mois", "month", "mois de rattachement"],
+    "date_reception": ["date reception", "date de reception", "date réception", "reception",
+                       "date demande", "date d’arrivee", "received date", "date in",
+                       "date_reception", "date recue"],
+    "date_envoi": ["date de fin", "date fin", "fin", "date d’envoi", "date envoi", "date reponse",
+                   "date de réponse", "date rendu", "date de remise", "date limite", "deadline",
+                   "date de cloture", "end date", "sent date", "date out", "date_envoi"],
+    "client": ["nom du client", "client", "prospect", "contrepartie", "client name", "client_nom"],
+    "segment": ["segment", "segment client", "categorie client", "catégorie", "secteur"],
+    "type_client": ["type de client", "type client", "canal", "client type", "relation"],
+    "pays": ["pays", "pays du client", "country", "juridiction", "zone"],
     "consultant": ["consultant", "cabinet", "conseil", "intermediaire", "gatekeeper"],
-    "sous_classe_actifs": ["sous classe d’actifs", "sous classe actifs", "sous categorie",
-                           "sub asset class", "subassetclass", "strategie detaillee"],
-    "forme_juridique": ["forme juridique", "vehicule", "structure", "legal form",
-                        "legalform", "wrapper"],
+    "analyste": ["writer", "redacteur", "rédacteur", "analyste", "nom de l’analyste",
+                 "rfp manager", "owner", "assigne a", "analyste_nom"],
+    "relecteur": ["reviewer", "relecteur", "valideur", "relecture", "validation"],
+    "type_demande": ["type", "type de demande", "type demande", "nature de la demande",
+                     "nature", "request type", "categorie"],
+    "montant_potentiel": ["volume", "encours", "encours en jeu", "encours potentiel",
+                          "montant", "montant eur", "montant potentiel", "aum", "ticket",
+                          "amount", "montant_eur", "assets"],
+    "etape_1": ["step 1", "step1", "etape 1", "étape 1", "soumission"],
+    "etape_2": ["step 2", "step2", "etape 2", "étape 2", "shortlist", "preselection"],
+    "oral": ["oral rfp", "oral", "soutenance", "soutenance orale", "presentation", "pitch"],
+    "statut": ["status", "statut", "statut du dossier", "etat", "état", "etat du dossier",
+               "etat d’avancement", "avancement", "stage", "phase"],
+    "qvidian": ["qvidian update", "qvidian", "mise a jour qvidian", "maj qvidian"],
+    "resultat_brut": ["result", "resultat", "résultat", "outcome", "decision", "décision",
+                      "won lost", "issue"],
     "expertise": ["expertise", "equipe de gestion", "pole de gestion", "desk",
-                  "investment team", "capability"],
-    "part_esg": ["part esg", "esg", "% esg", "pourcentage esg", "esg share",
-                 "esg %", "poids esg", "composante esg"],
+                  "investment team", "capability", "type de gestion"],
+    "forme_juridique": ["legal form", "legalform", "forme juridique", "vehicule", "véhicule",
+                        "structure", "wrapper"],
+    "classe_actifs": ["asset class", "assetclass", "classe d’actifs", "classe actifs", "classe"],
+    "sous_classe_actifs": ["sub asset class", "subassetclass", "sous classe d’actifs",
+                           "sous classe actifs", "sous classe", "sous categorie", "strategie",
+                           "stratégie", "strategie detaillee"],
+    "sri": ["sri", "isr", "socialement responsable", "label isr"],
+    "part_esg": ["% esg", "esg %", "esg", "part esg", "pourcentage esg", "esg share",
+                 "poids esg", "composante esg", "niveau esg"],
+    "fonds": ["reference fund", "fonds de reference", "fonds de référence", "fonds", "fund",
+              "nom du fonds", "produit", "solution"],
+    "commercial": ["sales", "commercial", "vendeur", "charge d’affaires", "chargé d’affaires",
+                   "responsable commercial", "sales rep", "relationship manager"],
+    "langue": ["language", "langue", "langue de reponse", "langue de réponse"],
+    "nb_questions": ["nombre de questions", "nb questions", "questions", "number of questions"],
 }
 
 # Seules ces trois colonnes sont indispensables ; le reste est optionnel.
 REQUIRED_FIELDS: tuple[str, ...] = ("date_reception", "type_demande", "statut")
 
+# Statut opérationnel. « Done » vaut « Envoyé » tant que Result ne dit pas
+# gagné ou perdu : c’est la colonne Result qui tranche (voir normalize).
 STATUS_NORMALIZATION = {
-    "en cours": "En cours",
-    "en-cours": "En cours",
-    "encours": "En cours",
-    "en traitement": "En cours",
-    "wip": "En cours",
-    "envoye": "Envoyé",
-    "envoyé": "Envoyé",
-    "soumis": "Envoyé",
-    "repondu": "Envoyé",
-    "submitted": "Envoyé",
-    "gagne": "Gagné",
-    "gagné": "Gagné",
-    "won": "Gagné",
-    "remporte": "Gagné",
-    "perdu": "Perdu",
-    "lost": "Perdu",
-    "abandonne": "Abandonné",
-    "abandonné": "Abandonné",
-    "annule": "Abandonné",
-    "no bid": "Abandonné",
-    "nobid": "Abandonné",
-    "declined": "Abandonné",
+    "en cours": "En cours", "en-cours": "En cours", "encours": "En cours",
+    "en traitement": "En cours", "wip": "En cours", "in progress": "En cours",
+    "in-progress": "En cours", "ongoing": "En cours", "open": "En cours", "ouvert": "En cours",
+    "envoye": "Envoyé", "envoyé": "Envoyé", "soumis": "Envoyé", "repondu": "Envoyé",
+    "submitted": "Envoyé", "done": "Envoyé", "termine": "Envoyé", "terminé": "Envoyé",
+    "finished": "Envoyé", "completed": "Envoyé", "closed": "Envoyé", "sent": "Envoyé",
+    "remis": "Envoyé",
+    "gagne": "Gagné", "gagné": "Gagné", "won": "Gagné", "remporte": "Gagné", "win": "Gagné",
+    "perdu": "Perdu", "lost": "Perdu",
+    "abandonne": "Abandonné", "abandonné": "Abandonné", "annule": "Abandonné",
+    "annulé": "Abandonné", "cancelled": "Abandonné", "canceled": "Abandonné",
+    "no bid": "Abandonné", "nobid": "Abandonné", "declined": "Abandonné", "withdrawn": "Abandonné",
+}
+
+# Résultat commercial (colonne Result). « NA » n’est pas une inconnue : c’est
+# l’absence de résultat, normale pour une due diligence ou un dossier non tranché.
+RESULT_NORMALIZATION = {
+    "won": "Gagné", "win": "Gagné", "gagne": "Gagné", "gagné": "Gagné", "remporte": "Gagné",
+    "lost": "Perdu", "perdu": "Perdu", "loss": "Perdu",
+    "na": "Sans objet", "n a": "Sans objet", "n/a": "Sans objet", "none": "Sans objet",
+    "sans objet": "Sans objet", "nan": "Sans objet", "": "Sans objet", "-": "Sans objet",
+    "pending": "En attente", "en attente": "En attente", "en cours": "En attente",
+    "no bid": "Sans suite", "nobid": "Sans suite", "cancelled": "Sans suite",
+    "withdrawn": "Sans suite", "abandonne": "Sans suite", "abandonné": "Sans suite",
 }
 
 TYPE_NORMALIZATION = {
-    "rfp": "RFP",
-    "r.f.p": "RFP",
-    "request for proposal": "RFP",
-    "appel d’offres": "RFP",
-    "rfi": "RFI",
-    "r.f.i": "RFI",
-    "request for information": "RFI",
-    "ddq": "DDQ",
-    "d.d.q": "DDQ",
-    "due diligence": "DDQ",
-    "due diligence questionnaire": "DDQ",
-    "questionnaire": "DDQ",
+    "rfp": "RFP", "r.f.p": "RFP", "request for proposal": "RFP", "appel d’offres": "RFP",
+    "appel d offres": "RFP", "appel d’offre": "RFP", "ao": "RFP", "tender": "RFP",
+    "rfi": "RFI", "r.f.i": "RFI", "request for information": "RFI",
+    "ddq": "DDQ", "d.d.q": "DDQ", "due diligence": "DDQ", "due diligence questionnaire": "DDQ",
+    "questionnaire": "DDQ", "dd": "DDQ", "due dil": "DDQ",
 }
 
 CLIENT_TYPE_NORMALIZATION = {
-    "institutionnel": "Institutionnel",
-    "institution": "Institutionnel",
-    "institutional": "Institutionnel",
-    "asset owner": "Institutionnel",
-    "distributeur": "Distributeur",
-    "distribution": "Distributeur",
-    "wholesale": "Distributeur",
-    "plateforme": "Distributeur",
-    "consultant": "Consultant",
-    "conseil": "Consultant",
-    "gatekeeper": "Consultant",
+    "institutionnel": "Institutionnel", "institution": "Institutionnel",
+    "institutional": "Institutionnel", "asset owner": "Institutionnel", "instit": "Institutionnel",
+    "instit.": "Institutionnel", "inst": "Institutionnel",
+    "distributeur": "Distributeur", "distribution": "Distributeur", "wholesale": "Distributeur",
+    "plateforme": "Distributeur", "distr": "Distributeur", "distr.": "Distributeur",
+    "dist": "Distributeur", "distributor": "Distributeur",
+    "international": "International", "intern": "International", "intern.": "International",
+    "int": "International", "intl": "International", "etranger": "International",
+    "étranger": "International",
+    "consultant": "Consultant", "conseil": "Consultant", "gatekeeper": "Consultant",
+}
+
+# Segment du client : le vocabulaire du classeur est anglais, l’écran est français.
+SEGMENT_NORMALIZATION = {
+    "pension/retirement": "Fonds de pension", "pension retirement": "Fonds de pension",
+    "pension": "Fonds de pension", "retirement": "Fonds de pension", "pension fund": "Fonds de pension",
+    "fonds de pension": "Fonds de pension", "caisse de retraite": "Fonds de pension",
+    "retraite": "Fonds de pension",
+    "insurance company": "Assureur", "insurance": "Assureur", "insurer": "Assureur",
+    "assureur": "Assureur", "assurance": "Assureur",
+    "mutual": "Mutuelle", "mutuelle": "Mutuelle", "mutual insurance": "Mutuelle",
+    "corporate": "Entreprise", "entreprise": "Entreprise", "company": "Entreprise",
+    "private bank": "Banque privée", "banque privee": "Banque privée", "banque privée": "Banque privée",
+    "private banking": "Banque privée", "wealth": "Banque privée",
+    "asset management company": "Société de gestion", "asset manager": "Société de gestion",
+    "societe de gestion": "Société de gestion", "société de gestion": "Société de gestion",
+    "banking network": "Réseau bancaire", "retail bank": "Réseau bancaire", "bank": "Réseau bancaire",
+    "reseau bancaire": "Réseau bancaire", "réseau bancaire": "Réseau bancaire", "banque": "Réseau bancaire",
+    "family office": "Family office",
+    "foundation": "Fondation", "endowment": "Fondation", "fondation": "Fondation",
+    "sovereign": "Fonds souverain", "sovereign wealth fund": "Fonds souverain",
+    "consultant": "Consultant", "platform": "Plateforme", "plateforme": "Plateforme",
+    "public": "Secteur public", "public sector": "Secteur public",
+}
+
+PAYS_NORMALIZATION = {
+    "france": "France", "fr": "France",
+    "uk": "Royaume-Uni", "united kingdom": "Royaume-Uni", "great britain": "Royaume-Uni",
+    "england": "Royaume-Uni", "royaume uni": "Royaume-Uni", "royaume-uni": "Royaume-Uni", "gb": "Royaume-Uni",
+    "italy": "Italie", "italie": "Italie", "it": "Italie",
+    "spain": "Espagne", "espagne": "Espagne", "es": "Espagne",
+    "germany": "Allemagne", "allemagne": "Allemagne", "de": "Allemagne", "deutschland": "Allemagne",
+    "switzerland": "Suisse", "suisse": "Suisse", "ch": "Suisse",
+    "netherlands": "Pays-Bas", "the netherlands": "Pays-Bas", "pays bas": "Pays-Bas", "nl": "Pays-Bas",
+    "belgium": "Belgique", "belgique": "Belgique", "be": "Belgique",
+    "luxembourg": "Luxembourg", "lu": "Luxembourg",
+    "usa": "États-Unis", "us": "États-Unis", "united states": "États-Unis", "etats unis": "États-Unis",
+    "états-unis": "États-Unis",
+    "sweden": "Suède", "suede": "Suède", "denmark": "Danemark", "danemark": "Danemark",
+    "norway": "Norvège", "norvege": "Norvège", "finland": "Finlande", "finlande": "Finlande",
+    "portugal": "Portugal", "austria": "Autriche", "autriche": "Autriche",
+    "ireland": "Irlande", "irlande": "Irlande", "singapore": "Singapour", "singapour": "Singapour",
+    "japan": "Japon", "japon": "Japon", "china": "Chine", "chine": "Chine",
+    "monaco": "Monaco", "hong kong": "Hong Kong", "australia": "Australie", "australie": "Australie",
+    "canada": "Canada", "middle east": "Moyen-Orient", "uae": "Émirats arabes unis",
+    "europe": "Europe", "international": "International", "other": "Autre", "autre": "Autre",
+}
+
+CLASSE_NORMALIZATION = {
+    "equity": "Actions", "equities": "Actions", "actions": "Actions",
+    "fixed income": "Obligataire", "bonds": "Obligataire", "obligataire": "Obligataire",
+    "obligations": "Obligataire", "credit": "Obligataire",
+    "diversified": "Diversifié", "diversifie": "Diversifié", "diversifié": "Diversifié",
+    "multi asset": "Diversifié", "balanced": "Diversifié", "allocation": "Diversifié",
+    "oa diversified": "Diversifié (architecture ouverte)",
+    "oa-diversified": "Diversifié (architecture ouverte)",
+    "open architecture": "Diversifié (architecture ouverte)",
+    "hedge funds": "Alternatif", "hedge fund": "Alternatif", "alternative": "Alternatif",
+    "alternatif": "Alternatif", "alternatives": "Alternatif",
+    "money market": "Monétaire", "monetaire": "Monétaire", "monétaire": "Monétaire", "cash": "Monétaire",
+    "real assets": "Actifs réels", "real estate": "Actifs réels", "private equity": "Actifs réels",
+    "infrastructure": "Actifs réels", "actifs reels": "Actifs réels", "actifs réels": "Actifs réels",
+    "convertible": "Convertibles", "convertibles": "Convertibles",
+    "corporate": "Corporate",
+}
+
+FORME_NORMALIZATION = {
+    "open-ended fund": "Fonds ouvert", "open ended fund": "Fonds ouvert", "open ended": "Fonds ouvert",
+    "fund": "Fonds ouvert", "opcvm": "Fonds ouvert", "ucits": "Fonds ouvert", "sicav": "Fonds ouvert",
+    "fcp": "Fonds ouvert", "fonds ouvert": "Fonds ouvert", "sicav luxembourg": "Fonds ouvert",
+    "mandate": "Mandat", "mandat": "Mandat", "segregated mandate": "Mandat",
+    "dedicated fund": "Fonds dédié", "fonds dedie": "Fonds dédié", "fonds dédié": "Fonds dédié",
+    "fia": "Fonds dédié", "aif": "Fonds dédié",
+    "corporate": "Corporate",
+}
+
+# Réponses binaires : SRI, Qvidian, étapes du processus.
+OUI_NON_NORMALIZATION = {
+    "yes": "Oui", "y": "Oui", "oui": "Oui", "o": "Oui", "true": "Oui", "1": "Oui", "x": "Oui",
+    "done": "Oui", "fait": "Oui", "ok": "Oui",
+    "no": "Non", "n": "Non", "non": "Non", "false": "Non", "0": "Non", "none": "Non",
+    "to do": "À faire", "todo": "À faire", "a faire": "À faire", "à faire": "À faire",
+    "pending": "À faire",
 }
 
 LANGUE_NORMALIZATION = {
     "fr": "Français", "francais": "Français", "français": "Français", "french": "Français",
-    "en": "Anglais", "anglais": "Anglais", "english": "Anglais", "uk": "Anglais",
+    "en": "Anglais", "anglais": "Anglais", "english": "Anglais", "uk": "Anglais", "gb": "Anglais",
     "de": "Allemand", "allemand": "Allemand", "german": "Allemand", "deutsch": "Allemand",
     "it": "Italien", "italien": "Italien", "italian": "Italien",
     "es": "Espagnol", "espagnol": "Espagnol", "spanish": "Espagnol",
     "nl": "Néerlandais", "neerlandais": "Néerlandais", "dutch": "Néerlandais",
+    "fr/en": "Français et anglais", "en/fr": "Français et anglais", "bilingue": "Français et anglais",
 }
+
+# Étapes du processus d’un appel d’offres, telles que le classeur les code.
+# L’interprétation des deux premières est celle du pôle ; elle se règle ici.
+ETAPES_RFP: tuple[tuple[str, str, str], ...] = (
+    ("etape_1", "Dossier remis", "étape 1 : la proposition est déposée"),
+    ("etape_2", "Présélection", "étape 2 : retenu après lecture du dossier"),
+    ("oral", "Soutenance orale", "présentation devant le client"),
+)
 
 # Valeur attribuée à une modalité inconnue (elle reste visible, jamais supprimée)
 VALEUR_INCONNUE = "Non renseigné"
@@ -236,26 +357,31 @@ NOTE_CENSURE = ("Les clients tranchent plusieurs mois après l’envoi de la ré
 # la barre de filtres ; les six premières sont les filtres de premier niveau.
 DIMENSIONS: dict[str, str] = {
     "famille": "Famille",
-    "resultat": "Résultat RFP",
+    "resultat": "Résultat",
+    "segment": "Segment",
     "pays": "Pays",
     "classe_actifs": "Classe d’actifs",
     "client": "Client",
+    "consultant": "Consultant",
+    "commercial": "Commercial",
     "expertise": "Expertise",
     "sous_classe_actifs": "Sous-classe d’actifs",
-    "consultant": "Consultant",
     "forme_juridique": "Forme juridique",
     "fonds": "Fonds de référence",
+    "type_client": "Type de client",
+    "soutenance": "Soutenance orale",
+    "sri": "ISR",
     "bande_esg": "Tranche ESG",
     "type_demande": "Type de demande",
     "statut": "Statut",
-    "type_client": "Type de client",
-    "analyste": "Analyste",
+    "analyste": "Rédacteur",
+    "relecteur": "Relecteur",
+    "qvidian": "Mise à jour Qvidian",
     "langue": "Langue",
 }
-# Filtres affichés sans repli dans la barre latérale ; le reste passe derrière
-# « Plus de filtres ».
-DIMENSIONS_PRINCIPALES = ("famille", "resultat", "pays", "classe_actifs",
-                          "client", "expertise")
+# Filtres affichés sans repli ; le reste passe derrière « Plus de filtres ».
+DIMENSIONS_PRINCIPALES = ("famille", "resultat", "segment", "pays", "classe_actifs",
+                          "client", "consultant", "commercial")
 
 # =============================================================================
 #  [MARQUE] — une couleur, ses tons
@@ -471,7 +597,7 @@ def encre_lisible(fond: str) -> str:
     """Encre à poser sur un aplat : celle des deux qui contraste le plus.
     Indispensable pour les valeurs écrites dans une cellule de carte de chaleur
     ou dans un segment d’entonnoir, dont la couleur varie avec la donnée."""
-    clair, sombre = "#ffffff", "#0d1014"
+    clair, sombre = MARQUE_BLANC, MARQUE_BLEU
     lum = _luminance(fond)
     contraste_clair = 1.05 / (lum + 0.05)
     contraste_sombre = (lum + 0.05) / 0.05
@@ -1190,9 +1316,41 @@ def _repartir_sur_annee(rng: np.random.Generator, total: int, annee: int,
     return [pd.Timestamp(d) for d in rng.choice(jours.to_numpy(), size=total, p=poids)]
 
 
+# Le classeur du pôle parle anglais pour plusieurs colonnes : la démonstration
+# reproduit ce vocabulaire pour exercer les mêmes traductions que le vrai fichier.
+_PAYS_EN = {"France": "France", "Suisse": "Switzerland", "Pays-Bas": "Netherlands",
+            "Suède": "Sweden", "Italie": "Italy", "Allemagne": "Germany", "Espagne": "Spain",
+            "Singapour": "Singapore", "Danemark": "Denmark", "Royaume-Uni": "UK",
+            "Luxembourg": "Luxembourg", "États-Unis": "USA"}
+_CLASSES_EN = {"Actions": "Equity", "Obligataire": "Fixed Income", "Diversifié": "Diversified",
+               "Alternatif": "Hedge Funds", "Actifs réels": "Real assets", "Monétaire": "Money market"}
+_FORMES_EN = {"SICAV": "Open-ended Fund", "FCP": "Open-ended Fund", "SICAV Luxembourg": "Open-ended Fund",
+              "Fonds dédié": "Dedicated Fund", "FIA": "Dedicated Fund", "Mandat": "Mandate"}
+_EXPERTISES_REELLES = {"Investment Solutions": "Open Architecture", "Corporate": "Corporate"}
+_SEGMENTS_PAR_TYPE = {
+    "Institutionnel": ["Pension/Retirement", "Insurance company", "Corporate", "Mutual", "Pension/Retirement"],
+    "Distributeur": ["Private Bank", "Banking Network", "Asset management company", "Private Bank"],
+    "Consultant": ["Consultant"],
+}
+_COMMERCIAUX: list[tuple[str, float]] = [
+    ("Arnaud Perrier", 0.30), ("Jean-Michel Réau", 0.26), ("Vincent Priou", 0.22),
+    ("Lionel Deny", 0.14), ("Claire Fontaine", 0.08),
+]
+# En-têtes du classeur, dans l’ordre du fichier : c’est le format que la
+# démonstration produit et que le moteur lit.
+COLONNES_CLASSEUR: tuple[str, ...] = (
+    "Numero", "Année", "Month", "Date de réception", "Date de fin", "Client", "Segment",
+    "Type de client", "Country", "Consultant", "Writer", "Reviewer", "Type", "Volume", "Number",
+    "Step_1", "Step_2", "ORAL_RFP", "Status", "Qvidian Update", "Result", "Expertise",
+    "Legal form", "Asset class", "Sub-asset class", "4Change", "SRI", "% ESG", "Reference fund",
+    "Sales", "Language",
+)
+
+
 def generate_fake_data(seed: int = FAKE_SEED,
                        aujourdhui: dt.date | None = None) -> pd.DataFrame:
-    """Jeu de données de démonstration couvrant VOLUMES_ANNUELS."""
+    """Jeu de données de démonstration couvrant VOLUMES_ANNUELS, au format
+    exact du classeur du pôle (COLONNES_CLASSEUR)."""
     rng = np.random.default_rng(seed)
     today = pd.Timestamp(aujourdhui or dt.date.today()).normalize()
 
@@ -1200,9 +1358,15 @@ def generate_fake_data(seed: int = FAKE_SEED,
     poids_analystes /= poids_analystes.sum()
     poids_consultants = np.array([c[1] for c in _CONSULTANTS], dtype=float)
     poids_consultants /= poids_consultants.sum()
+    poids_commerciaux = np.array([c[1] for c in _COMMERCIAUX], dtype=float)
+    poids_commerciaux /= poids_commerciaux.sum()
     appetence = {"Institutionnel": 7.0, "Distributeur": 6.0, "Consultant": 4.5}
     poids_clients = rng.dirichlet(np.array([appetence[c[1]] for c in _CLIENTS]))
     poids_fonds = rng.dirichlet(np.full(len(_FONDS), 6.0))
+    # Un client garde son segment et son commercial d’un dossier à l’autre.
+    segment_client = {c[0]: str(rng.choice(_SEGMENTS_PAR_TYPE[c[1]])) for c in _CLIENTS}
+    commercial_client = {c[0]: _COMMERCIAUX[int(rng.choice(len(_COMMERCIAUX), p=poids_commerciaux))][0]
+                         for c in _CLIENTS}
 
     lignes: list[dict[str, Any]] = []
     for annee, (n_dd, n_rfp) in VOLUMES_ANNUELS.items():
@@ -1210,69 +1374,65 @@ def generate_fake_data(seed: int = FAKE_SEED,
             continue
         for famille, total in ((FAMILLE_DD, n_dd), (FAMILLE_RFP, n_rfp)):
             for reception in _repartir_sur_annee(rng, total, annee, today):
-                if famille == FAMILLE_RFP:
-                    type_demande = "RFP"
-                else:
-                    type_demande = "DDQ" if rng.random() < 0.72 else "RFI"
-
+                type_demande = "RFP" if famille == FAMILLE_RFP else "DDQ"
                 i_client = int(rng.choice(len(_CLIENTS), p=poids_clients))
                 client, type_client, pays, langue = _CLIENTS[i_client]
                 i_fonds = int(rng.choice(len(_FONDS), p=poids_fonds))
-                fonds, classe, sous_classe, expertise, forme = _FONDS[i_fonds]
+                fonds, classe, sous_classe, expertise_equipe, forme = _FONDS[i_fonds]
+                expertise = _EXPERTISES_REELLES.get(expertise_equipe, "High Conviction")
                 i_analyste = int(rng.choice(len(_ANALYSTES), p=poids_analystes))
                 analyste, _, vitesse = _ANALYSTES[i_analyste]
-                # Un consultant n’intervient presque jamais sur une due diligence
-                # de routine : il pilote surtout les appels d’offres.
+                relecteur = _ANALYSTES[int(rng.choice(len(_ANALYSTES)))][0] if rng.random() < 0.7 else None
+                if relecteur == analyste:
+                    relecteur = None
                 if famille == FAMILLE_RFP or rng.random() < 0.18:
-                    consultant = _CONSULTANTS[int(rng.choice(len(_CONSULTANTS),
-                                                             p=poids_consultants))][0]
+                    consultant = _CONSULTANTS[int(rng.choice(len(_CONSULTANTS), p=poids_consultants))][0]
                 else:
                     consultant = VALEUR_INCONNUE
 
-                base_q = {"RFP": 4.85, "RFI": 3.80, "DDQ": 4.35}[type_demande]
+                # La charge de rédaction pilote le délai ; elle n’est pas exportée.
+                base_q = {"RFP": 4.85, "DDQ": 4.35}[type_demande]
                 nb_questions = int(np.clip(rng.lognormal(base_q, 0.42), 8, 600))
 
-                # La composante ESG monte régulièrement depuis 2018.
                 pente_esg = _logistique((annee - 2020.5) / 1.9)
                 if annee < 2017 and rng.random() < 0.55:
-                    part_esg = float("nan")          # sujet absent des questionnaires
+                    part_esg = float("nan")
                 else:
-                    moyenne = 0.10 + 0.72 * pente_esg + (0.10 if expertise == "Climate" else 0)
+                    moyenne = 0.10 + 0.72 * pente_esg + (0.10 if expertise_equipe == "Climate" else 0)
                     part_esg = float(np.clip(rng.beta(2.2, max(0.6, 2.2 * (1 - moyenne) / max(moyenne, 1e-3))), 0, 1))
+                sri = (part_esg == part_esg) and (part_esg >= 0.5 or "ISR" in fonds or "Vertes" in fonds
+                                                  or "Climat" in fonds)
 
-                attendu = (2.5
-                           + 0.062 * nb_questions * vitesse
-                           + {"RFP": 2.0, "RFI": 0.0, "DDQ": 1.0}[type_demande]
+                attendu = (2.5 + 0.062 * nb_questions * vitesse
+                           + {"RFP": 2.0, "DDQ": 1.0}[type_demande]
                            + (1.8 if langue != "Français" else 0.0))
                 delai = int(np.clip(round(rng.gamma(shape=6.0, scale=max(attendu, 1.0) / 6.0)), 1, 90))
-                if rng.random() < 0.04:            # dossiers lourds qui s’enlisent
+                if rng.random() < 0.04:
                     delai = int(min(90, delai * rng.uniform(1.8, 3.0)))
                 envoi = pd.Timestamp(np.busday_offset(reception.date(), delai, roll="forward"))
 
+                etape_1 = etape_2 = oral = None
                 if famille == FAMILLE_DD:
-                    # Une due diligence n’a pas de résultat commercial : elle est
-                    # en cours, ou envoyée. Le refus de traiter reste marginal.
                     if rng.random() < 0.012:
                         statut, envoi_final = STATUT_ABANDONNE, pd.NaT
                     elif envoi > today:
                         statut, envoi_final = STATUT_EN_COURS, pd.NaT
                     else:
                         statut, envoi_final = STATUT_ENVOYE, envoi
-                    montant = float("nan")
                 else:
                     sla = SLA_JOURS_OUVRES.get(type_demande, SLA_DEFAUT)
                     if rng.random() < 0.05:
                         statut, envoi_final = STATUT_ABANDONNE, pd.NaT
+                        etape_1 = etape_2 = oral = 0
                     elif envoi > today:
                         statut, envoi_final = STATUT_EN_COURS, pd.NaT
+                        etape_1 = etape_2 = oral = 0
                     else:
                         envoi_final = envoi
                         z = (-0.95
-                             + {"Institutionnel": 0.08, "Distributeur": 0.22,
-                                "Consultant": -0.18}[type_client]
+                             + {"Institutionnel": 0.08, "Distributeur": 0.22, "Consultant": -0.18}[type_client]
                              + {"Actions": 0.10, "Obligataire": 0.16, "Diversifié": 0.02,
-                                "Alternatif": -0.22, "Actifs réels": -0.05,
-                                "Monétaire": 0.24}[classe]
+                                "Alternatif": -0.22, "Actifs réels": -0.05, "Monétaire": 0.24}[classe]
                              - 0.050 * max(0, delai - sla)
                              + (0.14 if vitesse < 0.95 else 0.0))
                         decision = envoi + pd.Timedelta(days=int(rng.integers(45, 240)))
@@ -1280,18 +1440,24 @@ def generate_fake_data(seed: int = FAKE_SEED,
                             statut = STATUT_ENVOYE
                         else:
                             statut = STATUT_GAGNE if rng.random() < _logistique(z) else STATUT_PERDU
-                    montant = float("nan")
+                        # Le chemin : remis, puis présélectionné, puis soutenu à l’oral.
+                        # Un mandat gagné a presque toujours passé les trois étapes.
+                        etape_1 = 1
+                        gagne = statut == STATUT_GAGNE
+                        etape_2 = 1 if rng.random() < (0.92 if gagne else 0.48) else 0
+                        oral = 1 if (etape_2 and rng.random() < (0.85 if gagne else 0.55)) else 0
 
                 lignes.append({
                     "date_reception": reception, "date_envoi": envoi_final,
-                    "type_demande": type_demande, "client": client,
-                    "consultant": consultant, "type_client": type_client,
-                    "pays": pays, "fonds": fonds, "classe_actifs": classe,
-                    "sous_classe_actifs": sous_classe, "forme_juridique": forme,
-                    "expertise": expertise, "statut": statut, "analyste": analyste,
-                    "nb_questions": nb_questions,
+                    "type_demande": type_demande, "client": client, "segment": segment_client[client],
+                    "consultant": consultant, "type_client": type_client, "pays": pays,
+                    "fonds": fonds, "classe_actifs": classe, "sous_classe_actifs": sous_classe,
+                    "forme_juridique": forme, "expertise": expertise, "statut": statut,
+                    "analyste": analyste, "relecteur": relecteur, "commercial": commercial_client[client],
+                    "etape_1": etape_1, "etape_2": etape_2, "oral": oral, "sri": sri,
+                    "qvidian": (rng.random() < 0.4) if (famille == FAMILLE_RFP and statut != STATUT_EN_COURS) else None,
                     "part_esg": part_esg if part_esg == part_esg else np.nan,
-                    "langue": langue, "montant_potentiel": montant,
+                    "langue": langue, "montant_potentiel": float("nan"),
                     "_annee": annee, "_famille": famille,
                 })
 
@@ -1315,8 +1481,6 @@ def _attribuer_encours(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFra
         parts = rng.dirichlet(np.full(len(gagnes), 0.8))    # alpha < 1 : forte concentration
         df.loc[gagnes, "montant_potentiel"] = np.round(parts * total, 2)
 
-    # Les RFP non gagnés portent un encours potentiel tiré de la même loi : un
-    # dossier perdu représentait bien un enjeu commercial.
     reference = df.loc[df["statut"] == STATUT_GAGNE, "montant_potentiel"].dropna()
     mediane = float(reference.median()) if len(reference) else 60.0
     ouverts = df.index[(df["_famille"] == FAMILLE_RFP) & (df["statut"] != STATUT_GAGNE)]
@@ -1326,8 +1490,31 @@ def _attribuer_encours(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFra
     return df
 
 
+_VARIANTES_STATUS_CLASSEUR = {
+    STATUT_EN_COURS: ["In progress", "In Progress", "in progress", "IN PROGRESS"],
+    STATUT_ENVOYE: ["Done", "done", "DONE", "Done "],
+    STATUT_GAGNE: ["Done", "done", "Done"],
+    STATUT_PERDU: ["Done", "done", "DONE"],
+    STATUT_ABANDONNE: ["Cancelled", "Canceled", "cancelled"],
+}
+_VARIANTES_RESULT = {
+    STATUT_GAGNE: ["Won", "won", "WON", "Won "],
+    STATUT_PERDU: ["Lost", "lost", "LOST"],
+}
+_VARIANTES_TYPE_CLASSEUR = {
+    "RFP": ["RFP", "RFP", "rfp", "RFP "],
+    "DDQ": ["Due Diligence", "Due Diligence", "Due diligence", "DDQ", "due diligence"],
+}
+_VARIANTES_TYPE_CLIENT_CLASSEUR = {
+    "Institutionnel": ["Instit.", "Instit.", "Instit", "instit."],
+    "Distributeur": ["Distr.", "Distr.", "Distr", "distr."],
+    "International": ["Intern.", "Intern.", "Intern", "intern."],
+}
+
+
 def _salir(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
-    """Reproduit les imperfections d’un vrai export Excel."""
+    """Le classeur tel qu’il sort d’Excel : en-têtes du pôle, vocabulaire
+    anglais, casse hétérogène, dates et montants parfois en texte, doublons."""
     brut = pd.DataFrame(index=df.index)
 
     def variante(valeurs: pd.Series, table: dict[str, list[str]]) -> list[Any]:
@@ -1338,59 +1525,85 @@ def _salir(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
         for v in col:
             if pd.isna(v):
                 out.append(pd.NaT)
-            elif rng.random() < 0.08:            # 8 % saisies en texte « jj/mm/aaaa »
+            elif rng.random() < 0.08:
                 out.append(f"{v.day:02d}/{v.month:02d}/{v.year}")
             else:
                 out.append(v)
         return out
 
-    brut[COLUMN_MAP["date_reception"]] = dates_mixtes(df["date_reception"])
-    brut[COLUMN_MAP["date_envoi"]] = dates_mixtes(df["date_envoi"])
-    brut[COLUMN_MAP["type_demande"]] = variante(df["type_demande"], _VARIANTES_TYPE)
-    brut[COLUMN_MAP["client"]] = [
-        v.upper() if rng.random() < 0.05 else (v + " " if rng.random() < 0.05 else v)
-        for v in df["client"]
-    ]
-    brut[COLUMN_MAP["consultant"]] = [
-        np.nan if v == VALEUR_INCONNUE else v for v in df["consultant"]
-    ]
-    brut[COLUMN_MAP["type_client"]] = variante(df["type_client"], _VARIANTES_TYPE_CLIENT)
-    brut[COLUMN_MAP["pays"]] = [np.nan if rng.random() < 0.02 else v for v in df["pays"]]
-    brut[COLUMN_MAP["fonds"]] = df["fonds"].to_numpy()
-    brut[COLUMN_MAP["classe_actifs"]] = df["classe_actifs"].to_numpy()
-    brut[COLUMN_MAP["sous_classe_actifs"]] = df["sous_classe_actifs"].to_numpy()
-    brut[COLUMN_MAP["forme_juridique"]] = df["forme_juridique"].to_numpy()
-    brut[COLUMN_MAP["expertise"]] = df["expertise"].to_numpy()
-    brut[COLUMN_MAP["statut"]] = variante(df["statut"], _VARIANTES_STATUT)
-    brut[COLUMN_MAP["analyste"]] = df["analyste"].to_numpy()
-    brut[COLUMN_MAP["nb_questions"]] = [
-        str(v) if rng.random() < 0.03 else v for v in df["nb_questions"]
-    ]
-    # La part ESG arrive tantôt en fraction, tantôt en pourcentage, tantôt en
-    # tranche écrite à la main : les trois formes existent dans les vrais
-    # classeurs, la normalisation doit les absorber.
+    def binaire(col: pd.Series) -> list[Any]:
+        out: list[Any] = []
+        for v in col:
+            if v is None or (isinstance(v, float) and math.isnan(v)):
+                out.append(np.nan)
+            elif isinstance(v, (bool, np.bool_)):
+                out.append(("Yes" if v else "No") if rng.random() < 0.85 else (1 if v else 0))
+            else:
+                out.append(int(v))
+        return out
+
+    est_rfp = df["type_demande"].eq("RFP")
+    brut["Numero"] = np.arange(1, len(df) + 1)
+    brut["Année"] = df["date_reception"].dt.year.to_numpy()
+    brut["Month"] = df["date_reception"].dt.month.to_numpy()
+    brut["Date de réception"] = dates_mixtes(df["date_reception"])
+    brut["Date de fin"] = dates_mixtes(df["date_envoi"])
+    brut["Client"] = [v.upper() if rng.random() < 0.05 else (v + " " if rng.random() < 0.05 else v)
+                      for v in df["client"]]
+    brut["Segment"] = df["segment"].to_numpy()
+    # Le classeur distingue l’international du reste : un client hors de France
+    # est « Intern. », les autres gardent leur nature commerciale.
+    type_client = [("International" if (p != "France" and rng.random() < 0.8)
+                    else ("Institutionnel" if t == "Consultant" else t))
+                   for t, p in zip(df["type_client"], df["pays"])]
+    brut["Type de client"] = variante(pd.Series(type_client), _VARIANTES_TYPE_CLIENT_CLASSEUR)
+    brut["Country"] = [np.nan if rng.random() < 0.02 else _PAYS_EN.get(v, v) for v in df["pays"]]
+    brut["Consultant"] = ["None" if v == VALEUR_INCONNUE else v for v in df["consultant"]]
+    brut["Writer"] = df["analyste"].to_numpy()
+    brut["Reviewer"] = [np.nan if v is None else v for v in df["relecteur"]]
+    brut["Type"] = variante(df["type_demande"], _VARIANTES_TYPE_CLASSEUR)
+    # Volume = encours en M€ ; une due diligence porte 0, comme dans le classeur.
+    brut["Volume"] = [
+        (0 if not r else (f"{v:,.1f}".replace(",", " ").replace(".", ",") if pd.notna(v) and rng.random() < 0.08
+                          else (round(float(v), 1) if pd.notna(v) else np.nan)))
+        for v, r in zip(df["montant_potentiel"], est_rfp)]
+    brut["Number"] = 1
+    brut["Step_1"] = binaire(df["etape_1"])
+    brut["Step_2"] = binaire(df["etape_2"])
+    brut["ORAL_RFP"] = binaire(df["oral"])
+    brut["Status"] = variante(df["statut"], _VARIANTES_STATUS_CLASSEUR)
+    brut["Qvidian Update"] = binaire(df["qvidian"])
+    brut["Result"] = [rng.choice(_VARIANTES_RESULT[s]) if s in _VARIANTES_RESULT
+                      else rng.choice(["NA", "NA", "N/A", np.nan]) for s in df["statut"]]
+    brut["Expertise"] = df["expertise"].to_numpy()
+    brut["Legal form"] = [_FORMES_EN.get(v, v) for v in df["forme_juridique"]]
+    brut["Asset class"] = [_CLASSES_EN.get(v, v) for v in df["classe_actifs"]]
+    brut["Sub-asset class"] = df["sous_classe_actifs"].to_numpy()
+    brut["4Change"] = np.nan
+    brut["SRI"] = [np.nan if (s is None or s is False and rng.random() < 0.1) else ("Yes" if s else "No")
+                   for s in df["sri"]]
     esg: list[Any] = []
     for v in df["part_esg"]:
         if pd.isna(v):
             esg.append(np.nan)
         else:
             tirage = rng.random()
-            if tirage < 0.55:
-                esg.append(round(float(v), 3))
-            elif tirage < 0.85:
+            if tirage < 0.70:                         # la tranche écrite du classeur
+                esg.append("< 25% ESG" if v < 0.25 else ("25-50%" if v < 0.5
+                           else ("50-75%" if v < 0.75 else "75%")))
+            elif tirage < 0.90:
                 esg.append(f"{round(float(v) * 100)} %")
             else:
-                esg.append(ESG_FORT if v >= 0.75 else (ESG_MOYEN if v >= 0.25 else ESG_FAIBLE))
-    brut[COLUMN_MAP["part_esg"]] = esg
-    brut[COLUMN_MAP["langue"]] = variante(df["langue"], _VARIANTES_LANGUE)
-    brut[COLUMN_MAP["montant_potentiel"]] = [
-        (f"{v:,.2f} €".replace(",", " ").replace(".", ",")) if pd.notna(v) and rng.random() < 0.10
-        else v for v in df["montant_potentiel"]
-    ]
-    brut["Commentaire_Interne"] = ""          # colonne hors périmètre : ignorée sans bruit
+                esg.append(round(float(v), 3))
+    brut["% ESG"] = esg
+    brut["Reference fund"] = df["fonds"].to_numpy()
+    brut["Sales"] = df["commercial"].to_numpy()
+    brut["Language"] = ["FR" if v == "Français" else ("EN" if v == "Anglais" else v) for v in df["langue"]]
+    brut = brut[list(COLONNES_CLASSEUR)]
     doublons = brut.sample(frac=0.012, random_state=int(rng.integers(0, 10_000)))
     return pd.concat([brut, doublons], ignore_index=True).sample(
         frac=1.0, random_state=7).reset_index(drop=True)
+
 # =============================================================================
 #  CHARGEMENT, NORMALISATION, ENRICHISSEMENT
 # =============================================================================
@@ -1574,56 +1787,91 @@ def _vers_nombre(serie: pd.Series) -> pd.Series:
 def _vers_esg(serie: pd.Series) -> tuple[pd.Series, pd.Series]:
     """Part ESG d’un questionnaire → (fraction 0-1, tranche).
 
-    Trois écritures coexistent dans les classeurs réels : une fraction (0,45),
-    un pourcentage (« 45 % ») et une tranche saisie à la main (« > 75 % ESG »).
-    Une tranche écrite ne donne QUE la tranche : en déduire un pourcentage
-    précis serait inventer une donnée absente.
+    Plusieurs écritures coexistent : une fraction (0,45), un pourcentage
+    (« 45 % »), une tranche (« < 25% ESG », « 25-50% », « 50-75% », « 75% »,
+    « > 75 % ESG »). Une tranche ne donne QUE la tranche : en déduire un
+    pourcentage précis serait inventer une donnée absente.
     """
-    index_bandes = {_cle(b): b for b in ESG_ORDER}
-    index_bandes.update({
-        _cle("plus de 75"): ESG_FORT, _cle("> 75"): ESG_FORT, _cle("high esg"): ESG_FORT,
-        _cle("moins de 25"): ESG_FAIBLE, _cle("< 25"): ESG_FAIBLE, _cle("low esg"): ESG_FAIBLE,
-        _cle("entre 25 et 75"): ESG_MOYEN, _cle("25-75"): ESG_MOYEN, _cle("medium esg"): ESG_MOYEN,
-    })
+    def _bande(fraction: float) -> str:
+        return ESG_FORT if fraction >= ESG_SEUIL_FORT else (ESG_MOYEN if fraction >= 0.25 else ESG_FAIBLE)
 
     parts: list[float] = []
     bandes: list[str] = []
     for valeur in serie:
-        fraction = float("nan")
         if valeur is None or (isinstance(valeur, float) and math.isnan(valeur)):
-            pass
-        elif isinstance(valeur, (int, float, np.integer, np.floating)):
+            parts.append(float("nan")); bandes.append(ESG_INCONNU); continue
+        if isinstance(valeur, (int, float, np.integer, np.floating)):
             fraction = float(valeur)
-        else:
-            texte = str(valeur).strip()
-            cle = _cle(texte)
-            if cle in index_bandes:
-                parts.append(float("nan"))
-                bandes.append(index_bandes[cle])
-                continue
-            nombre = re.sub(r"[^\d,.\-]", "", texte.replace("\u00a0", ""))
-            if nombre not in ("", "-", ".", ","):
-                try:
-                    fraction = float(nombre.replace(",", "."))
-                except ValueError:
-                    fraction = float("nan")
-        if math.isfinite(fraction):
-            if fraction > 1.0:                      # saisie en points de pourcentage
+            if fraction > 1.0:
                 fraction /= 100.0
             fraction = min(max(fraction, 0.0), 1.0)
-            parts.append(fraction)
-            bandes.append(ESG_FORT if fraction >= ESG_SEUIL_FORT
-                          else (ESG_MOYEN if fraction >= 0.25 else ESG_FAIBLE))
+            parts.append(fraction); bandes.append(_bande(fraction)); continue
+
+        texte = str(valeur).strip()
+        cle = _cle(texte)
+        if cle in ("", "na", "n a", "none", "nan", "non renseigne", "non renseigné"):
+            parts.append(float("nan")); bandes.append(ESG_INCONNU); continue
+        nombres = [float(n.replace(",", ".")) for n in re.findall(r"\d+(?:[.,]\d+)?", texte)]
+        est_tranche = any(m in cle for m in ("<", ">", "moins", "plus", "under", "over", "below",
+                                              "above", "esg", "high", "low", "medium", "entre")) \
+            or len(nombres) >= 2 or "-" in texte or "–" in texte
+        if not nombres:
+            # Tranche écrite sans chiffre : « high ESG », « low ESG »
+            if any(m in cle for m in ("high", "fort", "forte", "eleve", "élevé")):
+                parts.append(float("nan")); bandes.append(ESG_FORT); continue
+            if any(m in cle for m in ("low", "faible", "bas")):
+                parts.append(float("nan")); bandes.append(ESG_FAIBLE); continue
+            if any(m in cle for m in ("medium", "moyen", "moyenne", "intermediaire")):
+                parts.append(float("nan")); bandes.append(ESG_MOYEN); continue
+            parts.append(float("nan")); bandes.append(ESG_INCONNU); continue
+        if len(nombres) >= 2:                          # « 25-50% » : le milieu de la tranche
+            repere = (nombres[0] + nombres[1]) / 2
+        elif any(m in cle for m in ("<", "moins", "under", "below")):
+            repere = nombres[0] / 2                    # « < 25% » : sous le seuil
         else:
-            parts.append(float("nan"))
-            bandes.append(ESG_INCONNU)
+            repere = nombres[0]                        # « 75% », « > 75 % » : au seuil ou au-dessus
+        fraction = repere / 100.0 if repere > 1.0 else repere
+        fraction = min(max(fraction, 0.0), 1.0)
+        parts.append(float("nan") if est_tranche else fraction)
+        bandes.append(_bande(fraction))
     return (pd.Series(parts, index=serie.index, dtype=float),
             pd.Series(bandes, index=serie.index, dtype=object))
 
 
 def _nettoyer_texte(serie: pd.Series) -> pd.Series:
+    """Espaces normalisés ; « None », « NA », « - » et consorts valent une absence."""
     texte = serie.astype("string").str.replace(r"\s+", " ", regex=True).str.strip()
-    return texte.replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA, "-": pd.NA, "n/a": pd.NA})
+    vide = texte.str.lower().isin(["", "nan", "none", "null", "na", "n/a", "n.a.", "-", "—", "–",
+                                   "aucun", "aucune", "non renseigne", "non renseigné", "?"])
+    return texte.mask(vide, pd.NA)
+
+
+def _vers_binaire(serie: pd.Series) -> pd.Series:
+    """Oui / non sous toutes leurs écritures → 1.0, 0.0 ou NaN (non renseigné)."""
+    def convertir(v: Any) -> float:
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            return float("nan")
+        if isinstance(v, (bool, np.bool_)):
+            return 1.0 if v else 0.0
+        if isinstance(v, (int, float, np.integer, np.floating)):
+            return 1.0 if float(v) > 0 else 0.0
+        cle = _cle(v)
+        if cle in ("", "na", "n a", "nan", "none"):
+            return float("nan")
+        if cle in ("1", "yes", "y", "oui", "o", "true", "x", "done", "ok", "fait", "won", "vrai"):
+            return 1.0
+        if cle in ("0", "no", "n", "non", "false", "faux", "lost"):
+            return 0.0
+        try:
+            return 1.0 if float(cle.replace(",", ".")) > 0 else 0.0
+        except ValueError:
+            return float("nan")
+    return serie.map(convertir).astype(float)
+
+
+def _oui_non(binaire: pd.Series) -> pd.Series:
+    return pd.Series(np.where(binaire == 1.0, "Oui", np.where(binaire == 0.0, "Non", VALEUR_INCONNUE)),
+                     index=binaire.index, dtype=object)
 
 
 def _unifier_libelles(serie: pd.Series) -> pd.Series:
@@ -1667,11 +1915,20 @@ def normalize(brut: pd.DataFrame, source: str = "",
               ) -> tuple[pd.DataFrame, LoadReport]:
     """Fichier brut → table canonique. Aucune ligne n’est écartée silencieusement."""
     rapport = LoadReport(source=source, n_lignes_source=len(brut))
+    brut = brut.copy()
+    brut.columns = [str(c).strip() for c in brut.columns]
     colonnes, absentes, ignorees = _resoudre_colonnes(list(brut.columns), correspondance)
     rapport.colonnes_absentes = absentes
     rapport.colonnes_ignorees = ignorees
 
-    manquantes_critiques = [c for c in REQUIRED_FIELDS if c in absentes]
+    # Une date de réception absente se reconstruit depuis Année + Month ; un
+    # statut absent se déduit de Result. Ni l’un ni l’autre n’est alors « manquant ».
+    reconstructibles = set()
+    if "date_reception" in absentes and "annee_source" in colonnes:
+        reconstructibles.add("date_reception")
+    if "statut" in absentes and "resultat_brut" in colonnes:
+        reconstructibles.add("statut")
+    manquantes_critiques = [c for c in REQUIRED_FIELDS if c in absentes and c not in reconstructibles]
     if manquantes_critiques:
         a = accord(len(manquantes_critiques))
         attendues = ", ".join(f"« {COLUMN_MAP[c]} »" for c in manquantes_critiques)
@@ -1695,12 +1952,37 @@ def normalize(brut: pd.DataFrame, source: str = "",
                 rapport.dates_illisibles[champ] = echecs
         else:
             df[champ] = pd.NaT
+    if "annee_source" in df:
+        annee = pd.to_numeric(df["annee_source"], errors="coerce")
+        mois = (pd.to_numeric(df["mois_source"], errors="coerce") if "mois_source" in df
+                else pd.Series(np.nan, index=df.index)).fillna(1).clip(1, 12)
+        cadre = pd.DataFrame({"year": annee, "month": mois, "day": 1})
+        reconstruite = pd.to_datetime(cadre.where(annee.notna()), errors="coerce")
+        a_completer = df["date_reception"].isna() & reconstruite.notna()
+        if a_completer.any():
+            df.loc[a_completer, "date_reception"] = reconstruite[a_completer]
+            rapport.incoherences["date de réception reconstituée depuis Année et Month"] = int(a_completer.sum())
+    for champ in ("annee_source", "mois_source"):
+        if champ in df:
+            df = df.drop(columns=champ)
+
+    # --- Identifiant -------------------------------------------------------
+    if "numero" in df:
+        df["numero"] = _nettoyer_texte(df["numero"]).astype(object)
+    else:
+        df["numero"] = pd.NA
 
     # --- Nombres -----------------------------------------------------------
     for champ in ("nb_questions", "montant_potentiel"):
         df[champ] = _vers_nombre(df[champ]) if champ in df else np.nan
     df.loc[df["nb_questions"] <= 0, "nb_questions"] = np.nan
-    df.loc[df["montant_potentiel"] < 0, "montant_potentiel"] = np.nan
+    # Un encours nul ou négatif n’est pas un encours : c’est une absence
+    # (une due diligence porte 0 dans le classeur).
+    df.loc[df["montant_potentiel"] <= 0, "montant_potentiel"] = np.nan
+
+    # --- Binaires : étapes du processus, ISR, Qvidian -----------------------
+    for champ in ("etape_1", "etape_2", "oral", "sri", "qvidian"):
+        df[champ] = _vers_binaire(df[champ]) if champ in df else np.nan
 
     # --- Part ESG ----------------------------------------------------------
     if "part_esg" in df:
@@ -1710,29 +1992,57 @@ def normalize(brut: pd.DataFrame, source: str = "",
         df["bande_esg"] = ESG_INCONNU
 
     # --- Modalités ---------------------------------------------------------
-    for champ in ("type_demande", "statut", "type_client", "langue",
-                  "client", "pays", "fonds", "classe_actifs", "analyste",
-                  "consultant", "sous_classe_actifs", "forme_juridique", "expertise"):
+    for champ in ("type_demande", "statut", "type_client", "langue", "resultat_brut",
+                  "client", "pays", "fonds", "classe_actifs", "analyste", "relecteur",
+                  "consultant", "sous_classe_actifs", "forme_juridique", "expertise",
+                  "segment", "commercial"):
         df[champ] = _nettoyer_texte(df[champ]) if champ in df else pd.Series(pd.NA, index=df.index, dtype="string")
 
     df["type_demande"] = _appliquer_normalisation(df["type_demande"], TYPE_NORMALIZATION, "type_demande", rapport)
-    df["statut"] = _appliquer_normalisation(df["statut"], STATUS_NORMALIZATION, "statut", rapport)
     df["type_client"] = _appliquer_normalisation(df["type_client"], CLIENT_TYPE_NORMALIZATION, "type_client", rapport)
     df["langue"] = _appliquer_normalisation(df["langue"], LANGUE_NORMALIZATION, "langue", rapport)
-    for champ in ("client", "pays", "fonds", "classe_actifs", "analyste",
-                  "consultant", "sous_classe_actifs", "forme_juridique", "expertise"):
+    df["segment"] = _appliquer_normalisation(df["segment"], SEGMENT_NORMALIZATION, "segment", rapport)
+    df["pays"] = _appliquer_normalisation(df["pays"], PAYS_NORMALIZATION, "pays", rapport,
+                                          titre_par_defaut=False)
+    df["classe_actifs"] = _appliquer_normalisation(df["classe_actifs"], CLASSE_NORMALIZATION,
+                                                   "classe_actifs", rapport, titre_par_defaut=False)
+    df["forme_juridique"] = _appliquer_normalisation(df["forme_juridique"], FORME_NORMALIZATION,
+                                                     "forme_juridique", rapport, titre_par_defaut=False)
+
+    # Statut : la colonne Status, tranchée par Result quand elle dit gagné ou perdu.
+    statut_present = "statut" in colonnes
+    if statut_present:
+        df["statut"] = _appliquer_normalisation(df["statut"], STATUS_NORMALIZATION, "statut", rapport)
+    resultat = pd.Series(VALEUR_INCONNUE, index=df.index, dtype=object)
+    if "resultat_brut" in colonnes:
+        resultat = _appliquer_normalisation(df["resultat_brut"], RESULT_NORMALIZATION,
+                                            "resultat_brut", rapport)
+        tranche = resultat.isin([STATUT_GAGNE, STATUT_PERDU])
+        if not statut_present:
+            df["statut"] = np.where(tranche, resultat,
+                                    np.where(df["date_envoi"].notna(), STATUT_ENVOYE, STATUT_EN_COURS))
+        else:
+            df.loc[tranche, "statut"] = resultat[tranche]
+            sans_suite = resultat.eq("Sans suite") & ~df["statut"].isin([STATUT_GAGNE, STATUT_PERDU])
+            df.loc[sans_suite, "statut"] = STATUT_ABANDONNE
+    df = df.drop(columns=[c for c in ("resultat_brut",) if c in df.columns])
+    df["statut"] = df["statut"].astype(object)
+
+    for champ in ("client", "fonds", "analyste", "relecteur", "consultant", "sous_classe_actifs",
+                  "expertise", "commercial"):
         df[champ] = _unifier_libelles(df[champ]).fillna(VALEUR_INCONNUE).astype(object)
+    for champ in ("pays", "classe_actifs", "forme_juridique", "segment"):
+        df[champ] = df[champ].astype(object)
 
     # --- Hygiène -----------------------------------------------------------
     avant = len(df)
-    df = df.drop_duplicates()
+    df = df.drop_duplicates(subset=[c for c in df.columns if c != "numero"])
     rapport.doublons_supprimes = avant - len(df)
 
     sans_date = df["date_reception"].isna()
     rapport.lignes_sans_date = int(sans_date.sum())
     df = df.loc[~sans_date].copy()
 
-    # Incohérences chronologiques : on neutralise la date d’envoi, on journalise
     envoi_anterieur = df["date_envoi"].notna() & (df["date_envoi"] < df["date_reception"])
     if envoi_anterieur.any():
         rapport.incoherences["date d’envoi antérieure à la réception (envoi ignoré)"] = int(envoi_anterieur.sum())
@@ -1813,6 +2123,19 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
     df["esg_fort"] = df["bande_esg"].eq(ESG_FORT)
     df["montant_en_jeu"] = np.where(df["statut"].isin([STATUT_EN_COURS, STATUT_ENVOYE]),
                                     df["montant_potentiel"], np.nan)
+
+    # --- Processus d’un appel d’offres : les étapes franchies -----------------
+    # Les trois indicateurs binaires du classeur deviennent des drapeaux, et une
+    # dimension lisible (« Soutenance orale : Oui / Non ») pour filtrer.
+    for champ in ("etape_1", "etape_2", "oral", "sri", "qvidian"):
+        if champ not in df.columns:
+            df[champ] = np.nan
+    df["a_remis"] = df["est_rfp"] & ((df["etape_1"] == 1.0) | df["est_envoye"])
+    df["a_preselection"] = df["est_rfp"] & (df["etape_2"] == 1.0)
+    df["a_oral"] = df["est_rfp"] & (df["oral"] == 1.0)
+    df["soutenance"] = np.where(df["est_rfp"], _oui_non(df["oral"]), RESULTAT_HORS_RFP)
+    df["sri"] = _oui_non(df["sri"])
+    df["qvidian"] = _oui_non(df["qvidian"])
     return df
 
 
@@ -2563,6 +2886,48 @@ def echelle_decomposition(df: pd.DataFrame) -> dict[str, Any] | None:
                        f"portés à la hauteur des {fmt_int(total)} reçus")}
 
 
+def aum_perdu(df: pd.DataFrame) -> float:
+    """Encours des appels d’offres perdus : ce que l’on n’a pas remporté."""
+    if df.empty or "montant_potentiel" not in df.columns:
+        return 0.0
+    return float(df.loc[df["est_rfp"] & df["est_perdu"], "montant_potentiel"].sum(skipna=True))
+
+
+def entonnoir(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Le chemin d’un appel d’offres : reçu, remis, présélectionné, soutenu à
+    l’oral, remporté — effectif et encours à chaque étape, taux de passage
+    depuis l’étape précédente.
+
+    Une étape dont la colonne n’est pas renseignée dans le classeur n’apparaît
+    pas : on ne dessine pas un entonnoir sur une donnée absente.
+    """
+    if df.empty or "est_rfp" not in df.columns:
+        return []
+    rfp = df[df["est_rfp"]]
+    if rfp.empty:
+        return []
+    etapes: list[tuple[str, str, pd.Series]] = [("recus", "Reçus", pd.Series(True, index=rfp.index)),
+                                                ("remis", "Remis", rfp["a_remis"])]
+    if rfp["etape_2"].notna().any():
+        etapes.append(("preselection", "Présélectionnés", rfp["a_preselection"]))
+    if rfp["oral"].notna().any():
+        etapes.append(("oral", "Soutenus à l’oral", rfp["a_oral"]))
+    etapes.append(("gagnes", "Remportés", rfp["est_gagne"]))
+
+    sortie: list[dict[str, Any]] = []
+    precedent: int | None = None
+    for cle, libelle, masque in etapes:
+        masque = masque.fillna(False).astype(bool)
+        n = int(masque.sum())
+        encours = float(rfp.loc[masque, "montant_potentiel"].sum(skipna=True))
+        sortie.append({"cle": cle, "libelle": libelle, "n": n, "encours": encours,
+                       "part_du_total": n / len(rfp) if len(rfp) else float("nan"),
+                       "passage": (n / precedent) if precedent else float("nan")})
+        precedent = n
+    return sortie
+
+
+
 def sla_libelle(par_famille: bool = False) -> str:
     """Engagement de délai en toutes lettres.
 
@@ -2810,14 +3175,51 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
                     aide="Part des dossiers traités dans le délai cible interne "
                          f"({sla_libelle(par_famille=True)})."))
 
-    charge = df["nb_questions"].sum(skipna=True)
-    d = _delta(charge, val(lambda f: f["nb_questions"].sum(skipna=True)), mode="relatif")
-    kpis.append(Kpi("questions", "Questions traitées", fmt_int(charge), float(charge),
-                    detail=f"{fmt_dec(df['nb_questions'].mean(), 0)} par dossier en moyenne",
+    # L’encours perdu dit ce que valait ce que l’on n’a pas remporté.
+    perdu = aum_perdu(df)
+    d = _delta(perdu, val(aum_perdu), mode="relatif", sens_hausse="mauvais")
+    kpis.append(Kpi("aum_perdu", "Encours perdu", fmt_dec(perdu, 0, "M€"), float(perdu),
+                    detail=(lambda n: f"sur {pluriel(n, 'dossier')} perdu{accord(n)}")(
+                        int((df["est_rfp"] & df["est_perdu"]).sum())),
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    cible="activite", groupe="operations",
-                    aide="Volume de questions : la mesure réelle de la charge, un RFP "
-                         "pesant plusieurs fois une due diligence courte."))
+                    cible="aum", groupe="commercial",
+                    aide="Somme des encours des appels d’offres perdus sur la période."))
+
+    # Le chemin de l’appel d’offres : présélection et oral, quand le classeur les code.
+    remis = df[df["a_remis"]] if "a_remis" in df.columns else df.head(0)
+    if len(remis) and df["etape_2"].notna().any():
+        part = float(remis["a_preselection"].mean()) if len(remis) else float("nan")
+        d = _delta(part, val(lambda f: f.loc[f["a_remis"], "a_preselection"].mean()
+                            if f["a_remis"].any() else float("nan")), mode="points")
+        kpis.append(Kpi("preselection", "Présélectionnés", fmt_pct(part, 0),
+                        None if pd.isna(part) else float(part),
+                        detail=f"{fmt_int(int(remis['a_preselection'].sum()))} sur {fmt_int(len(remis))} dossiers remis",
+                        delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                        cible="rfp", groupe="commercial",
+                        aide="Part des appels d’offres remis retenus après lecture du dossier "
+                             "(étape 2 du processus)."))
+    if len(remis) and df["oral"].notna().any():
+        part = float(remis["a_oral"].mean()) if len(remis) else float("nan")
+        d = _delta(part, val(lambda f: f.loc[f["a_remis"], "a_oral"].mean()
+                            if f["a_remis"].any() else float("nan")), mode="points")
+        kpis.append(Kpi("oral", "Soutenus à l’oral", fmt_pct(part, 0),
+                        None if pd.isna(part) else float(part),
+                        detail=f"{fmt_int(int(remis['a_oral'].sum()))} sur {fmt_int(len(remis))} dossiers remis",
+                        delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                        cible="rfp", groupe="commercial",
+                        aide="Part des appels d’offres remis ayant donné lieu à une soutenance "
+                             "orale devant le client."))
+
+    # Le volume de questions n’existe que si le classeur le porte.
+    if df["nb_questions"].notna().any():
+        charge = df["nb_questions"].sum(skipna=True)
+        d = _delta(charge, val(lambda f: f["nb_questions"].sum(skipna=True)), mode="relatif")
+        kpis.append(Kpi("questions", "Questions traitées", fmt_int(charge), float(charge),
+                        detail=f"{fmt_dec(df['nb_questions'].mean(), 0)} par dossier en moyenne",
+                        delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                        cible="activite", groupe="operations",
+                        aide="Volume de questions : la mesure réelle de la charge, un RFP "
+                             "pesant plusieurs fois une due diligence courte."))
 
     part_esg = part_esg_forte(df)
     d = _delta(part_esg, val(part_esg_forte), mode="points")
@@ -2967,6 +3369,27 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 f"contre {fmt_dec(par_mois.mean(), 0)} en moyenne mensuelle",
                 ton="info", cible="activite"))
 
+    # 8 bis. Le chemin des appels d’offres remis
+    chemin = entonnoir(df)
+    par_cle = {e["cle"]: e for e in chemin}
+    if "remis" in par_cle and par_cle["remis"]["n"] >= 8 and ("oral" in par_cle or "preselection" in par_cle):
+        remis = par_cle["remis"]["n"]
+        morceaux = []
+        if "preselection" in par_cle:
+            morceaux.append(f"{fmt_int(par_cle['preselection']['n'])} "
+                            f"({fmt_pct(par_cle['preselection']['n'] / remis, 0)}) présélectionnés")
+        if "oral" in par_cle:
+            morceaux.append(f"{fmt_int(par_cle['oral']['n'])} "
+                            f"({fmt_pct(par_cle['oral']['n'] / remis, 0)}) soutenus à l’oral")
+        gagnes_n = par_cle["gagnes"]["n"]
+        insights.append(Insight(
+            "chemin",
+            f"Sur {fmt_int(remis)} appels d’offres remis, {' et '.join(morceaux)}, "
+            f"{fmt_int(gagnes_n)} remporté{accord(gagnes_n)}.",
+            f"{fmt_dec(par_cle['gagnes']['encours'], 0, 'M€')} d’encours remporté" if par_cle["gagnes"]["encours"] else "",
+            ton="info", cible="rfp"))
+
+
     # 9. ESG
     connus = df[df["bande_esg"] != ESG_INCONNU]
     if len(connus) >= 30:
@@ -2986,7 +3409,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
 # =============================================================================
 #  BLOCS D’ANALYSE (figure + narration + jumeau tableau)
 #  Chaque bloc est autonome et renvoie None si la donnée ne le permet pas :
-#  le dashboard s’adapte au fichier, il n’impose rien.
+#  l’écran s’adapte au fichier, il n’impose rien.
 # =============================================================================
 # Architecture de l’information : une section = une question de pilotage.
 SECTIONS: dict[str, str] = {
@@ -3821,16 +4244,19 @@ def _bloc_rfp_reception(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
                                "l’irrégularité propre aux appels d’offres.")
 
 
-def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Où gagne-t-on ? Taux de succès par classe d’actifs, avec incertitude."""
+def _succes_par(df: pd.DataFrame, champ: str, cle: str, titre: str,
+                min_tranches: int = 5) -> Block | None:
+    """Où gagne-t-on ? Taux de succès par modalité d’une dimension, avec son
+    intervalle de confiance et l’encours remporté."""
     rfp = df[df["est_rfp"] & df["resultat"].isin([RESULTAT_GAGNE, RESULTAT_PERDU])]
-    if len(rfp) < 12 or not _dispo(rfp, "classe_actifs", min_modalites=2):
+    if len(rfp) < 12 or not _dispo(rfp, champ, min_modalites=2):
         return None
-    groupe = rfp.groupby("classe_actifs", observed=True).agg(
+    groupe = rfp.groupby(champ, observed=True).agg(
         tranches=("resultat", "size"),
         gagnes=("est_gagne", "sum"),
-        aum=("aum_gagne", "sum"))
-    groupe = groupe[groupe["tranches"] >= 5]
+        aum=("aum_gagne", "sum"),
+        perdu=("montant_potentiel", lambda s: float(s[rfp.loc[s.index, "est_perdu"]].sum())))
+    groupe = groupe[(groupe["tranches"] >= min_tranches) & (groupe.index != VALEUR_INCONNUE)]
     if len(groupe) < 2:
         return None
     groupe["taux"] = groupe["gagnes"] / groupe["tranches"]
@@ -3856,8 +4282,8 @@ def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: d
                       annotation_text=f"moyenne : {fmt_pct(global_taux, 0)}",
                       annotation_position="top", annotation_font=dict(color=INK_2, size=11))
     borne = float((groupe["haut"] * 100).max())
-    for classe, ligne in groupe.iterrows():
-        fig.add_annotation(x=borne * 1.05, y=classe, xanchor="left",
+    for modalite, ligne in groupe.iterrows():
+        fig.add_annotation(x=borne * 1.05, y=modalite, xanchor="left",
                            text=f"{fmt_pct(ligne['taux'], 0)}   ·   n = {int(ligne['tranches'])}",
                            font=dict(size=11.5, color=INK_2))
     fig.update_xaxes(title_text="Taux de succès", ticksuffix=ESP_UNITE + "%",
@@ -3870,17 +4296,127 @@ def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: d
                 + (" — écart significatif au seuil de 5 %."
                    if meilleure["bas"] > pire["haut"]
                    else " — mais les intervalles se recouvrent : l’écart n’est pas établi."))
-    tableau = groupe.reset_index()[["classe_actifs", "tranches", "gagnes", "taux", "aum"]]
+    tableau = groupe.reset_index()[[champ, "tranches", "gagnes", "taux", "aum", "perdu"]]
     tableau["taux"] = tableau["taux"].map(lambda v: fmt_pct(v, 1))
     tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
-    tableau.columns = ["Classe d’actifs", "Tranchés", "Gagnés", "Taux de succès",
-                       "Encours remporté"]
-    return Block("rfp_succes", "rfp", "Taux de succès par classe d’actifs",
-                 accroche, fig, tableau.sort_values("Tranchés", ascending=False),
-                 note="Moustaches = intervalle de confiance de Wilson à 95 %. Deux classes "
+    tableau["perdu"] = tableau["perdu"].map(lambda v: fmt_dec(v, 0, "M€"))
+    tableau.columns = [DIMENSIONS.get(champ, champ), "Tranchés", "Gagnés", "Taux de succès",
+                       "Encours remporté", "Encours perdu"]
+    return Block(cle, "rfp", titre, accroche, fig, tableau.sort_values("Tranchés", ascending=False),
+                 note="Moustaches = intervalle de confiance de Wilson à 95 %. Deux modalités "
                       "dont les intervalles se recouvrent ne sont pas départageables. "
-                      "Classes de moins de 5 décisions écartées.",
-                 dimension="classe_actifs")
+                      f"Modalités de moins de {min_tranches} décisions écartées.",
+                 dimension=champ)
+
+
+def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    return _succes_par(df, "classe_actifs", "rfp_succes", "Taux de succès par classe d’actifs")
+
+
+def _bloc_rfp_segment(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    return _succes_par(df, "segment", "rfp_segment", "Taux de succès par segment de client")
+
+
+def _bloc_rfp_commercial(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    return _succes_par(df, "commercial", "rfp_commercial", "Taux de succès par commercial")
+
+
+def _bloc_entonnoir(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Le chemin des appels d’offres : combien franchissent chaque étape, et
+    quel encours ils portent."""
+    chemin = entonnoir(df)
+    if len(chemin) < 3 or chemin[0]["n"] < 5:
+        return None
+    libelles = [e["libelle"] for e in chemin]
+    effectifs = [e["n"] for e in chemin]
+    encours = [e["encours"] for e in chemin]
+    # Les étapes se lisent de haut en bas ; le ton s’assombrit à mesure qu’on
+    # approche du mandat, le libellé et les deux valeurs sont écrits.
+    tons = [teinte(t) for t in np.linspace(0.30, 1.0, len(chemin))]
+    fig = _fig(max(280, 52 * len(chemin) + 80), margin=dict(l=8, r=16, t=18, b=8))
+    fig.add_trace(go.Bar(
+        y=libelles, x=effectifs, orientation="h", marker=_marque(tons, 1.2),
+        text=[f"{fmt_int(n)}   ·   {fmt_dec(e, 0, 'M€')}" for n, e in zip(effectifs, encours)],
+        textposition="outside", cliponaxis=False, textfont=dict(color=INK_2, size=12),
+        customdata=np.stack([encours, [e["part_du_total"] * 100 for e in chemin],
+                             [(e["passage"] * 100) if pd.notna(e["passage"]) else float("nan") for e in chemin]], axis=-1),
+        hovertemplate=("<b>%{y}</b><br>%{x} appels d’offres · %{customdata[0]:,.0f} M€"
+                       "<br>%{customdata[1]:.0f} % des reçus · %{customdata[2]:.0f} % de l’étape précédente"
+                       "<extra></extra>")))
+    fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(title_text="Appels d’offres", rangemode="tozero")
+    _labels_exterieurs(fig, effectifs, 1.55)
+    for i in range(1, len(chemin)):
+        p = chemin[i]["passage"]
+        if pd.notna(p):
+            fig.add_annotation(x=0, y=i - 0.5, xanchor="left", yanchor="middle", xshift=-4,
+                               text=f"↓ {fmt_pct(p, 0)}", showarrow=False,
+                               font=dict(size=10.5, color=INK_MUTED))
+
+    remis = next((e for e in chemin if e["cle"] == "remis"), chemin[0])
+    dernier = chemin[-1]
+    accroche = (f"Sur {fmt_int(chemin[0]['n'])} appels d’offres reçus, {fmt_int(remis['n'])} remis ; "
+                f"{fmt_int(dernier['n'])} remporté{accord(dernier['n'])} "
+                f"({fmt_pct(dernier['n'] / remis['n'] if remis['n'] else float('nan'), 0)} des remis), "
+                f"pour {fmt_dec(dernier['encours'], 0, 'M€')} d’encours.")
+    tableau = pd.DataFrame({
+        "Étape": libelles, "Appels d’offres": [fmt_int(n) for n in effectifs],
+        "Encours (M€)": [fmt_dec(e, 0) for e in encours],
+        "Part des reçus": [fmt_pct(e["part_du_total"], 0) for e in chemin],
+        "Passage depuis l’étape précédente": [fmt_pct(e["passage"], 0) if pd.notna(e["passage"]) else "—"
+                                              for e in chemin]})
+    return Block("entonnoir", "rfp", "Le chemin des appels d’offres", accroche, fig, tableau,
+                 note="Les étapes viennent des colonnes Step_1, Step_2 et ORAL_RFP du classeur, "
+                      "lues comme : dossier remis, présélection, soutenance orale. Les dossiers "
+                      "encore en attente comptent dans les étapes franchies, pas dans les remportés.",
+                 large=True)
+
+
+def _bloc_rfp_ouverts(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Les appels d’offres encore ouverts, un par ligne, l’encours le plus
+    important d’abord. Bloc sans figure : cette réponse se lit ligne à ligne."""
+    ouverts = df[df["est_rfp"] & df["statut"].isin([STATUT_EN_COURS, STATUT_ENVOYE])]
+    if ouverts.empty:
+        return None
+    aujourdhui = pd.Timestamp.today().normalize()
+    tri = ouverts.sort_values("montant_potentiel", ascending=False, na_position="last")
+    etat = np.where(tri["statut"].eq(STATUT_EN_COURS), "En rédaction", "En attente")
+    depuis = np.where(tri["statut"].eq(STATUT_EN_COURS),
+                      (aujourdhui - tri["date_reception"]).dt.days,
+                      (aujourdhui - tri["date_envoi"].fillna(tri["date_reception"])).dt.days)
+    etape = []
+    for _, l in tri.iterrows():
+        if l.get("a_oral"):
+            etape.append("Oral")
+        elif l.get("a_preselection"):
+            etape.append("Présélection")
+        elif l.get("a_remis"):
+            etape.append("Remis")
+        else:
+            etape.append("—")
+    # Huit colonnes, pas plus : le suivi commercial et le consultant sont sur
+    # la fiche du dossier et dans le tableau de l’écran Situation.
+    colonnes = {"Client": tri["client"], "Segment": tri["segment"], "Pays": tri["pays"],
+                "Classe d’actifs": tri["classe_actifs"], "État": etat, "Étape": etape,
+                "Depuis (j)": [fmt_int(v) for v in depuis],
+                "Encours (M€)": [fmt_dec(v, 0) if pd.notna(v) else "—" for v in tri["montant_potentiel"]]}
+    table = pd.DataFrame(colonnes).replace({VALEUR_INCONNUE: "—"}).reset_index(drop=True)
+    for c in ("Segment", "Pays"):
+        if (table[c] == "—").all():
+            table = table.drop(columns=c)
+    total = float(tri["montant_potentiel"].sum(skipna=True))
+    ligne = {c: "" for c in table.columns}
+    ligne["Client"] = pluriel(len(tri), "dossier")
+    ligne["Encours (M€)"] = fmt_dec(total, 0)
+    table.loc[len(table)] = ligne
+    n_redaction = int(tri["statut"].eq(STATUT_EN_COURS).sum())
+    accroche = (f"{pluriel(len(tri), 'appel d’offres', 'appels d’offres')} ouvert{accord(len(tri))}, "
+                f"{fmt_dec(total, 0, 'M€')} d’encours en jeu : {fmt_int(n_redaction)} en rédaction, "
+                f"{fmt_int(len(tri) - n_redaction)} en attente de décision.")
+    return Block("rfp_ouverts", "rfp", "Les appels d’offres ouverts", accroche, None, table,
+                 note="« En attente » : remis au client, non tranché. « Depuis » compte les jours "
+                      "depuis la réception pour un dossier en rédaction, depuis la remise pour un "
+                      "dossier en attente de décision.", large=True)
 
 
 def _bloc_rfp_consultants(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
@@ -4161,6 +4697,45 @@ def _bloc_aum_clients(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> B
                  dimension="client")
 
 
+def _bloc_aum_segment(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Où l’encours se joue : remporté, perdu et encore en jeu, par segment."""
+    rfp = df[df["est_rfp"] & df["montant_potentiel"].notna()]
+    if len(rfp) < 5 or not _dispo(rfp, "segment", min_modalites=2):
+        return None
+    g = rfp.groupby("segment", observed=True).apply(lambda s: pd.Series({
+        "remporte": float(s.loc[s["est_gagne"], "montant_potentiel"].sum()),
+        "perdu": float(s.loc[s["est_perdu"], "montant_potentiel"].sum()),
+        "en_jeu": float(s.loc[s["statut"].isin([STATUT_EN_COURS, STATUT_ENVOYE]), "montant_potentiel"].sum()),
+        "dossiers": int(len(s))}), include_groups=False)
+    g = g[g.index != VALEUR_INCONNUE]
+    g["total"] = g["remporte"] + g["perdu"] + g["en_jeu"]
+    g = g[g["total"] > 0].sort_values("total")
+    if len(g) < 2:
+        return None
+    fig = _fig(max(300, 44 * len(g) + 96), barmode="stack")
+    series = [("remporte", "Remporté", COMPARTIMENT_COLORS["gagnes"]),
+              ("en_jeu", "En jeu", COMPARTIMENT_COLORS["en_attente"]),
+              ("perdu", "Perdu", COMPARTIMENT_COLORS["perdus"])]
+    for cle, nom, ton in series:
+        fig.add_trace(go.Bar(y=g.index, x=g[cle], orientation="h", name=nom, marker=_marque(ton, 1.2),
+                             hovertemplate=f"<b>%{{y}}</b><br>{nom} : %{{x:,.0f}} M€<extra></extra>"))
+    fig.update_xaxes(title_text="Encours (M€)")
+    _axe_valeurs(fig, float(g["total"].max()), fmt_eur_tick)
+    tete = g.sort_values("total", ascending=False)
+    accroche = (f"« {tete.index[0]} » concentre {fmt_dec(tete['total'].iloc[0], 0, 'M€')} d’encours "
+                f"en jeu, remporté ou perdu, soit {fmt_pct(tete['total'].iloc[0] / g['total'].sum(), 0)} "
+                f"du total.")
+    tableau = tete.reset_index()[["segment", "dossiers", "remporte", "en_jeu", "perdu"]].copy()
+    for c in ("remporte", "en_jeu", "perdu"):
+        tableau[c] = tableau[c].map(lambda v: fmt_dec(v, 0, "M€"))
+    tableau.columns = ["Segment", "Appels d’offres", "Remporté", "En jeu", "Perdu"]
+    return Block("aum_segment", "aum", "Encours par segment de client", accroche, fig, tableau,
+                 note="Le ton dit l’état ; la légende et la valeur au survol le nomment. "
+                      "L’encours en jeu est celui des dossiers encore ouverts.",
+                 dimension="segment")
+
+
+
 def _bloc_aum_strategies(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
     gagnes = df[df["est_rfp"] & df["est_gagne"] & df["aum_gagne"].notna()]
     champ = "sous_classe_actifs" if _dispo(gagnes, "sous_classe_actifs", min_modalites=2) \
@@ -4239,6 +4814,39 @@ def _bloc_esg_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
                  note="Tranches telles que suivies au comité. Les dossiers dont la part "
                       "ESG n’est pas renseignée forment une catégorie à part : les "
                       "compter comme « peu ESG » fausserait la série.", large=True)
+
+
+def _bloc_sri(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """La part des dossiers à dimension ISR, année après année."""
+    if "sri" not in df.columns or not _dispo(df, "sri", min_modalites=2):
+        return None
+    connus = df[df["sri"].isin(["Oui", "Non"])]
+    if len(connus) < 20:
+        return None
+    pivot = connus.pivot_table(index=connus["date_reception"].dt.year, columns="sri",
+                               values="date_reception", aggfunc="size", fill_value=0)
+    if len(pivot) < 2:
+        return None
+    part = pivot.get("Oui", 0) / pivot.sum(axis=1)
+    fig = _fig(320)
+    fig.add_trace(go.Bar(x=[str(a) for a in pivot.index], y=part * 100,
+                         marker=_marque(SERIES[0], 1.2),
+                         text=[fmt_pct(v, 0) for v in part], textposition="outside",
+                         cliponaxis=False, textfont=dict(color=INK_2, size=11.5),
+                         customdata=np.stack([pivot.get("Oui", 0), pivot.sum(axis=1)], axis=-1),
+                         hovertemplate="%{x} : %{customdata[0]} dossiers ISR sur %{customdata[1]}<extra></extra>"))
+    fig.update_yaxes(title_text="Part des dossiers ISR", ticksuffix=ESP_UNITE + "%",
+                     range=[0, min(100, float(part.max() * 100) * 1.25 + 5)])
+    accroche = (f"{fmt_pct(part.iloc[-1], 0)} des dossiers de {pivot.index[-1]} portent une dimension "
+                f"ISR, contre {fmt_pct(part.iloc[0], 0)} en {pivot.index[0]}.")
+    tableau = pd.DataFrame({"Année": [str(a) for a in pivot.index],
+                            "Dossiers ISR": pivot.get("Oui", 0).to_numpy(),
+                            "Dossiers renseignés": pivot.sum(axis=1).to_numpy(),
+                            "Part": [fmt_pct(v, 1) for v in part]})
+    return Block("sri", "esg", "La part des dossiers ISR", accroche, fig, tableau,
+                 note="Calculée sur les seuls dossiers dont la colonne SRI est renseignée.",
+                 dimension="sri")
+
 
 
 def _bloc_esg_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
@@ -4330,42 +4938,52 @@ def _bloc_delai_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
 
 
 def _bloc_charge_analyste(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """La charge par rédacteur : en questions quand le classeur les compte, en
+    dossiers sinon."""
     if not _dispo(df, "analyste", min_modalites=2):
         return None
     agg = agg_dimension(df, "analyste")
-    agg = agg[agg["volume"] >= 3].sort_values("questions")
+    agg = agg[agg["volume"] >= 3]
     if len(agg) < 2:
         return None
+    en_questions = bool(df["nb_questions"].notna().any())
+    mesure, libelle_mesure = ("questions", "Questions traitées") if en_questions else ("volume", "Dossiers")
+    agg = agg.sort_values(mesure)
     fig = _fig(max(300, 38 * len(agg) + 90))
     fig.add_trace(go.Bar(
-        y=agg["analyste"], x=agg["questions"], orientation="h",
+        y=agg["analyste"], x=agg[mesure], orientation="h",
         marker=_marque(SERIES[0]),
-        text=[fmt_int(q) for q in agg["questions"]],
+        text=[fmt_int(q) for q in agg[mesure]],
         textposition="outside", cliponaxis=False, textfont=dict(color=INK_2, size=11.5),
         customdata=np.stack([agg["volume"], agg["delai_median"], agg["taux_sla"] * 100], axis=-1),
-        hovertemplate=("<b>%{y}</b><br>%{x:,.0f} questions traitées"
-                       "<br>%{customdata[0]:.0f} dossiers"
+        hovertemplate=("<b>%{y}</b><br>%{x:,.0f} " + libelle_mesure.lower()
+                       + "<br>%{customdata[0]:.0f} dossiers"
                        "<br>Délai médian : %{customdata[1]:.0f} j"
                        "<br>Respect du délai : %{customdata[2]:.0f} %<extra></extra>"),
     ))
-    fig.update_xaxes(title_text="Questions traitées")
-    _labels_exterieurs(fig, list(agg["questions"]), 1.18)
-    _axe_valeurs(fig, float(agg["questions"].max()) * 1.18, fmt_compact)
+    fig.update_xaxes(title_text=libelle_mesure)
+    _labels_exterieurs(fig, list(agg[mesure]), 1.18)
+    _axe_valeurs(fig, float(agg[mesure].max()) * 1.18, fmt_compact)
 
-    part_max = agg["questions"].max() / agg["questions"].sum()
-    accroche = (f"{fmt_int(agg['questions'].sum())} questions réparties sur {len(agg)} analystes ; "
-                f"la charge la plus lourde représente {fmt_pct(part_max, 1)} du total.")
-    tableau = agg.sort_values("questions", ascending=False)[
+    total = float(agg[mesure].sum())
+    part_max = (agg[mesure].max() / total) if total else float("nan")
+    accroche = (f"{fmt_int(total)} {libelle_mesure.lower()} réparti{'e' if en_questions else ''}s "
+                f"sur {len(agg)} rédacteurs ; la charge la plus lourde représente "
+                f"{fmt_pct(part_max, 1)} du total.")
+    tableau = agg.sort_values(mesure, ascending=False)[
         ["analyste", "volume", "questions", "delai_median", "taux_sla", "taux_succes"]].copy()
+    if not en_questions:
+        tableau = tableau.drop(columns="questions")
     tableau["delai_median"] = tableau["delai_median"].map(fmt_jours)
     tableau["taux_sla"] = tableau["taux_sla"].map(lambda v: fmt_pct(v, 1))
     tableau["taux_succes"] = tableau["taux_succes"].map(lambda v: fmt_pct(v, 1))
-    tableau.columns = ["Analyste", "Dossiers", "Questions traitées", "Délai médian",
-                       "Respect du délai", "Taux de succès"]
-    return Block("charge_analyste", "activite", "Répartition de la charge par analyste",
+    tableau.columns = (["Rédacteur", "Dossiers"] + (["Questions traitées"] if en_questions else [])
+                       + ["Délai médian", "Respect du délai", "Taux de succès"])
+    return Block("charge_analyste", "activite", "Répartition de la charge par rédacteur",
                  accroche, fig, tableau,
-                 note="Vue de charge, pas de performance : le nombre de questions dépend du type "
-                      "de dossier reçu, et le taux de succès dépend d’abord du marché adressé.")
+                 note="Vue de charge, pas de performance : la nature des dossiers reçus "
+                      "varie, et le taux de succès dépend d’abord du marché adressé.",
+                 dimension="analyste")
 
 
 def _bloc_saisonnalite(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
@@ -4644,15 +5262,16 @@ _CONSTRUCTEURS: tuple[Callable[[pd.DataFrame, pd.DataFrame, dict], Block | None]
     _bloc_volume_annuel, _bloc_cadence, _bloc_delai_famille, _bloc_delai_evolution,
     _bloc_saisonnalite, _bloc_charge_analyste,
     # 03 Appels d’offres
-    _bloc_resultats_rfp, _bloc_rfp_resultats_annee, _bloc_rfp_reception,
-    _bloc_rfp_succes_dimension, _bloc_rfp_consultants,
+    _bloc_rfp_ouverts, _bloc_entonnoir, _bloc_resultats_rfp, _bloc_rfp_resultats_annee,
+    _bloc_rfp_reception, _bloc_rfp_succes_dimension, _bloc_rfp_segment, _bloc_rfp_consultants,
+    _bloc_rfp_commercial,
     # 04 Due diligence
     _bloc_dd_mensuel, _bloc_type_detail, _bloc_dd_expertise, _bloc_dd_pays,
     _bloc_dd_matrice,
     # 05 Encours & gains
-    _bloc_aum_annuel, _bloc_aum_clients, _bloc_aum_strategies,
+    _bloc_aum_annuel, _bloc_aum_segment, _bloc_aum_clients, _bloc_aum_strategies,
     # 06 ESG
-    _bloc_esg_evolution, _bloc_esg_dimension,
+    _bloc_esg_evolution, _bloc_esg_dimension, _bloc_sri,
     # 07 Diagnostic
     _bloc_regression_delai, _bloc_facteurs, _bloc_projection,
 )
@@ -4755,11 +5374,13 @@ COLONNES_EXPORT: dict[str, str] = {
     "type_demande": "Type",
     "statut": "Statut",
     "client": "Client",
+    "segment": "Segment",
+    "commercial": "Commercial",
     "type_client": "Type de client",
     "pays": "Pays",
     "fonds": "Fonds",
     "classe_actifs": "Classe d’actifs",
-    "analyste": "Analyste",
+    "analyste": "Rédacteur",
     "langue": "Langue",
     "nb_questions": "Questions",
     "delai_ouvre": "Délai (j ouvrés)",
@@ -4769,8 +5390,8 @@ COLONNES_EXPORT: dict[str, str] = {
 
 
 CHAMPS_RECHERCHE = ("client", "consultant", "pays", "fonds", "classe_actifs",
-                    "sous_classe_actifs", "expertise", "analyste", "type_demande",
-                    "statut", "resultat", "forme_juridique")
+                    "sous_classe_actifs", "expertise", "analyste", "relecteur", "commercial",
+                    "segment", "type_demande", "statut", "resultat", "forme_juridique", "numero")
 
 
 def cle_recherche(texte: str) -> str:
@@ -4915,10 +5536,11 @@ def _autotest() -> None:
     diffuse = {b.cle for cle, _ in analyse.sections_rapport
                for b in analyse.section(cle, pour_rapport=True)}
     exclus = ecran - diffuse
-    assert exclus, "aucun bloc d’écran : le mécanisme hors_rapport ne sert plus"
+    # Le détail RFI / DDQ n’existe que si le classeur distingue les deux : le
+    # mécanisme se vérifie sur les indicateurs, toujours présents.
     assert all(b.hors_rapport for b in analyse.blocs if b.cle in exclus)
     assert not any(k.hors_rapport for k in analyse.kpis_rapport)
-    assert {"rfi", "ddq"} <= {k.cle for k in analyse.kpis}, "détail des types absent de l’écran"
+    assert any(k.hors_rapport for k in analyse.kpis), "détail des types absent de l’écran"
     print(f"   ✓ {pluriel(len(diffuse), 'bloc')} diffusé{accord(len(diffuse))}, "
           f"{len(exclus)} réservé{accord(len(exclus))} à l’écran "
           f"({', '.join(sorted(exclus))})")
@@ -4933,7 +5555,7 @@ def _autotest() -> None:
         assert couleur.lower() in admis, f"couleur hors teinte dans les jetons : {couleur}"
     for couleur in SERIES + SEQUENTIEL + ORDINAL + list(STATUT_COLORS.values()):
         assert couleur.lower() in admis, couleur
-    assert encre_lisible(MARQUE_BLEU) == "#ffffff"
+    assert encre_lisible(MARQUE_BLEU).lower() == "#ffffff"
     a = build_analysis(df.head(400), Filters(), rapport)
     assert not a.erreurs, a.erreurs
     print(f"   ✓ {len(admis)} tons admis, jetons et séries conformes, figures reconstruites")
@@ -4942,15 +5564,15 @@ def _autotest() -> None:
     import tempfile as _tempfile
     with _tempfile.TemporaryDirectory() as dossier:
         brut = generate_fake_data().head(300).rename(columns={
-            "Date_Reception": "Date de réception", "Type": "Nature de la demande",
-            "Statut": "État", "Client_Nom": "Prospect", "Montant_EUR": "Ticket (M€)",
-            "Part_ESG": "Composante ESG", "Pays": "Juridiction"})
+            "Date de réception": "Réception", "Type": "Nature de la demande",
+            "Status": "État du dossier", "Client": "Prospect", "Volume": "Ticket (M€)",
+            "% ESG": "Composante ESG", "Country": "Juridiction"})
         chemin = Path(dossier) / "extraction.xlsx"
         brut.to_excel(chemin, sheet_name="Suivi", index=False)
         vue = apercu(chemin, "Suivi")
         assert vue["onglets"] == ["Suivi"] and not vue["obligatoires_manquants"], vue
-        assert vue["correspondance"]["date_reception"] == "Date de réception"
-        assert vue["correspondance"]["statut"] == "État"
+        assert vue["correspondance"]["date_reception"] == "Réception"
+        assert vue["correspondance"]["statut"] == "État du dossier"
         assert "montant_potentiel" in vue["correspondance"], vue["absentes"]
         # Une colonne que rien ne reconnaît se branche par correspondance forcée.
         brut2 = brut.rename(columns={"Ticket (M€)": "Col_42"})
@@ -4973,7 +5595,7 @@ def _autotest() -> None:
         ampute[colonne] = VALEUR_INCONNUE if ampute[colonne].dtype == object else np.nan
     partiel = build_analysis(ampute, Filters(), rapport)
     assert not partiel.erreurs, partiel.erreurs
-    assert "dd_expertise" not in [b.cle for b in partiel.blocs]
+    assert "dd_expertise" not in [b.cle for b in partiel.blocs] and "rfp_segment" in [b.cle for b in analyse.blocs]
     print("   ✓ sélection vide, échantillon minuscule et dimensions absentes gérés")
 
     print("\nTous les contrôles sont passés.")

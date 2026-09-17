@@ -2,10 +2,11 @@
 
 Application interne de pilotage des appels d’offres et de la due diligence, pour
 
-Elle répond en un écran à la question du matin — *où en sont les appels
-d’offres ?* — puis laisse descendre, page après page, jusqu’au dossier
-individuel. Un bouton produit le rapport HTML du périmètre affiché : un fichier
-unique, ouvrable d’un double-clic, sans Python ni connexion.
+Elle répond en un écran à la question de la semaine — *quels appels d’offres
+sont ouverts, pour quel encours, et qu’avons-nous gagné ou perdu ?* — puis
+laisse descendre, page après page, jusqu’au dossier individuel. Un bouton
+produit le rapport HTML du périmètre affiché : un fichier unique, ouvrable
+d’un double-clic, sans Python ni connexion.
 
 ---
 
@@ -19,8 +20,9 @@ python server.py
 L’application s’ouvre sur **http://localhost:8000**. Port occupé ?
 `uvicorn server:app --port 8080`.
 
-Elle démarre sur un jeu de **données de démonstration** (environ 1 700
-questionnaires, 2014 → aujourd’hui). Rien à configurer pour la découvrir.
+Elle démarre sur un jeu de **données de démonstration** au format du classeur
+du pôle (environ 1 700 questionnaires, 2014 → aujourd’hui). Rien à configurer
+pour la découvrir.
 
 ```bash
 python core.py                # contrôle la chaîne de bout en bout
@@ -52,16 +54,43 @@ Trois façons, de la plus simple à la plus précise.
 
 **Formats acceptés** : `.xlsx`, `.xlsm`, `.xls`, `.csv`, `.tsv`, `.txt`.
 
+**Le classeur du pôle est lu tel quel.** Les en-têtes attendus sont ceux du
+fichier de suivi, et voici comment chacun est lu :
+
+| Colonne | Lecture |
+|---|---|
+| `Numero` | identifiant du dossier |
+| `Année`, `Month` | servent à reconstruire une date de réception si elle manque |
+| `Date de réception`, `Date de fin` | bornes du dossier ; le délai de traitement est leur écart en jours calendaires |
+| `Client`, `Segment`, `Type de client`, `Country` | qui demande — Instit. / Distr. / Intern. deviennent Institutionnel / Distributeur / International |
+| `Consultant` | cabinet intermédiaire ; « None » = en direct |
+| `Writer`, `Reviewer` | rédacteur et relecteur |
+| `Type` | RFP ou Due Diligence : la famille du dossier |
+| `Volume` | **l’encours en jeu, en M€**. C’est la grandeur centrale : elle est sommée par état (ouvert, gagné, perdu), par segment, par étape |
+| `Number` | vaut 1 ; ignoré, on compte les lignes |
+| `Step_1`, `Step_2`, `ORAL_RFP` | trois étapes binaires : dossier remis, présélection, soutenance orale. Elles forment le chemin des appels d’offres |
+| `Status` | Done / In progress / Cancelled → envoyé / en cours / abandonné |
+| `Result` | Won / Lost / NA → gagné / perdu / en attente. Prime sur `Status` pour un appel d’offres |
+| `Qvidian Update` | la base de réponses a-t-elle été mise à jour |
+| `Expertise` | High Conviction / Open Architecture / Corporate |
+| `Legal form`, `Asset class`, `Sub-asset class`, `Reference fund` | ce qui est proposé |
+| `SRI` | fonds ISR, Yes / No |
+| `% ESG` | tranche : « < 25 % ESG », « 25-50 % », « 50-75 % », « 75 % » |
+| `Sales` | commercial en charge |
+| `Language` | FR / EN |
+| `4Change` | conservée, jamais interprétée |
+
 **La correspondance est tolérante** : casse, accents, espaces, tirets,
 underscores et unités entre parenthèses sont ignorés. « Date de réception »,
-`DATE_RECEPTION` et « date réception » désignent la même colonne. Les intitulés
-courants sont reconnus (« Sub asset class », « Ticket (M€) », « ESG % »…) ; pour
-en ajouter, compléter `COLUMN_ALIASES` en tête de `core.py`.
+`DATE_RECEPTION` et « date réception » désignent la même colonne, et les
+intitulés d’anciennes extractions (« Sub asset class », « Ticket (M€) »,
+« Analyste », « Montant »…) restent reconnus ; pour en ajouter, compléter
+`COLUMN_ALIASES` en tête de `core.py`.
 
-**Trois colonnes sont indispensables** : date de réception, type de demande,
-statut. Toutes les autres sont facultatives — si `Expertise` manque, la page due
-diligence perd son classement par expertise et conserve le reste. L’écran
-« Données » dit précisément ce qui manque et ce qui a été écarté.
+**Trois colonnes sont indispensables** : `Date de réception`, `Type`, `Status`.
+Toutes les autres sont facultatives — si `Step_1` manque, le chemin des appels
+d’offres disparaît et le reste demeure. L’écran « Données » dit précisément ce
+qui manque et ce qui a été écarté.
 
 > Les données réelles ne rejoignent jamais le dépôt : `data/` est ignoré par
 > git, à l’exception de son `.gitignore`.
@@ -80,7 +109,7 @@ cibles par type, seuil ESG, horizons de croissance.
 | `server.py` | API et service de l’interface : périmètre, analyse, dossiers, rapport, branchement | FastAPI, uvicorn |
 | `static/` | L’interface : HTML, CSS, modules JavaScript — aucune étape de construction | — |
 | `export.py` | Le rapport HTML autonome | plotly |
-| `assets/` | La marque (SVG vectoriels), Inter et EB Garamond (SIL OFL) | — |
+| `assets/` | Inter et EB Garamond (SIL OFL) ; emplacement du logo officiel | — |
 
 `core.py` n’importe ni Streamlit, ni FastAPI : il se teste et se réutilise seul
 (notebook, script, tâche planifiée). Il produit un objet `Analysis` — indicateurs,
@@ -107,17 +136,25 @@ lien copié rouvre le même écran, le même périmètre, la même fiche ; le bo
 
 ## Les écrans
 
-**Situation** — la lecture du matin. Une phrase calculée sur le périmètre, les
-trois chiffres qui appellent une action, le carnet des cinq états (en rédaction,
-en attente de décision, gagnés, perdus, sans suite) avec ses encours et ses
-identités arithmétiques, les indicateurs, les dossiers à relancer, ce qui a
-changé, la décomposition de l’activité, les huit derniers trimestres, et les
-listes nommées.
+**Situation** — la lecture hebdomadaire de la direction, sans rien ouvrir
+d’autre. Une phrase calculée : combien d’appels d’offres sont ouverts, pour quel
+encours, combien en rédaction et combien en attente de décision ; puis, sur la
+période, les mandats remportés et perdus avec leurs encours. Dessous, dans
+l’ordre : **la liste des appels d’offres ouverts** (client, classe d’actifs,
+état, étape atteinte, jours d’attente, suivi commercial, encours — le plus gros
+encours d’abord), le carnet des cinq états avec ses identités arithmétiques,
+les indicateurs (succès, encours remporté, perdu, en jeu, présélection, oral,
+délais), les dossiers à relancer, le chemin des appels d’offres (reçus → remis →
+présélectionnés → soutenus → remportés, effectifs et encours à chaque marche),
+ce qui a changé, les listes nommées des gagnés et perdus, la décomposition de
+l’activité et les huit derniers trimestres.
 
 **Analyses** — six questions, une à la fois : Activité, Appels d’offres, Due
-diligence, Encours & gains, ESG, Diagnostic. Chaque analyse porte sa phrase, sa
-figure, sa note de méthode et son tableau jumeau. Un clic sur une catégorie
-recalcule tout le périmètre.
+diligence, Encours & gains, ESG, Diagnostic. La page Appels d’offres ouvre sur
+la liste des dossiers ouverts et le chemin des étapes, puis le taux de succès
+par classe d’actifs, par segment de client, par consultant et par commercial.
+Chaque analyse porte sa phrase, sa figure, sa note de méthode et son tableau
+jumeau. Un clic sur une catégorie recalcule tout le périmètre.
 
 **Dossiers** — la recherche plein texte, la liste, et la fiche d’un dossier avec
 les autres dossiers du même client.
@@ -145,9 +182,14 @@ c’est un rapprochement de vocabulaire, et il se lit.
 - **Taux de succès** — gagnés / (gagnés + perdus). Les dossiers non tranchés sont
   exclus du dénominateur ; les compter comme des échecs fabriquerait un
   effondrement sur les périodes récentes.
-- **Encours remporté** — encours des appels d’offres gagnés, rattaché à l’année
-  de réception du dossier. **Encours en jeu** — celui des dossiers encore
-  ouverts : un pipeline, pas une collecte acquise.
+- **Encours** — la colonne `Volume` du classeur, en M€. **Encours remporté** :
+  celui des appels d’offres gagnés, rattaché à l’année de réception du dossier.
+  **Encours perdu** : celui des appels d’offres perdus. **Encours en jeu** :
+  celui des dossiers encore ouverts — un pipeline, pas une collecte acquise.
+- **Chemin des appels d’offres** — `Step_1` (dossier remis), `Step_2`
+  (présélection), `ORAL_RFP` (soutenance orale), puis le résultat. Un dossier
+  en attente compte dans les étapes qu’il a franchies, jamais dans les
+  remportés. Le taux de passage se lit d’une marche à la suivante.
 - **Délai de traitement** — jours **calendaires** entre réception et envoi, comme
   au comité. Le respect du délai cible se mesure, lui, en jours ouvrés.
 - **Cadence** — dossiers **terminés** par mois : la capacité de production de
@@ -193,12 +235,13 @@ est à côté du chiffre, pas derrière un survol. Aucune carte, aucune ombre,
 aucun dégradé : des filets d’un pixel et du vide. `prefers-reduced-motion`
 coupe tout mouvement.
 
-**La marque.** `assets/logo.svg` (emblème et logotype), `assets/embleme.svg`
-(les cinq flèches seules) et `assets/logo-empile.svg` (pour une couverture), en
-`fill="currentColor"`. Ce sont des tracés vectoriels reconstruits : les sites de
-la maison ne sont pas accessibles depuis l’environnement de développement.
-Déposer les fichiers officiels de la charte sous ces trois noms suffit à les
-remplacer partout.
+**La marque.** Le logo officiel, ou rien. Le dépôt ne contient aucun tracé
+reconstruit : sans fichier de la charte, l’application et le rapport écrivent
+le nom de la maison en toutes lettres. Pour afficher le logo, déposer les
+fichiers officiels dans `assets/` : `logo.svg` (emblème et logotype, barre de
+l’application), `embleme.svg` (favicon) et `logo-empile.svg` (couverture du
+rapport), de préférence en `fill="currentColor"` pour qu’ils prennent le bleu
+de la maison. Ils sont pris en compte au démarrage suivant, partout.
 
 ---
 
@@ -220,10 +263,12 @@ un `Block` ou un `Kpi` porte un drapeau `hors_rapport` et `export.py` l’écart
 
 Le jeu par défaut est **explicitement synthétique** — la source est libellée
 comme telle dans le pied de page, sur l’écran « Données » et dans l’annexe du
-rapport. Sa forme reproduit celle d’un pôle réel : due diligence multipliée par
-quatre en dix ans à effectif RFP constant, creux d’août, délais corrélés au
-volume de questions, collecte très concentrée sur quelques mandats. Aucun client
-nommé n’existe.
+rapport. Il est produit **exactement au format du classeur du pôle** (mêmes
+en-têtes, mêmes vocabulaires Done / Won / Instit. / Yes), de sorte que la chaîne
+de lecture exercée par la démonstration est celle qui lira le vrai fichier. Sa
+forme reproduit celle d’un pôle réel : due diligence multipliée par quatre en
+dix ans à effectif RFP constant, creux d’août, encours très concentré sur
+quelques mandats. Aucun client nommé n’existe.
 
 Les volumes annuels sont paramétrés de sorte que les trois indicateurs de
 croissance tombent sur ceux que publie le pôle : **+49 % sur 3 ans, +149 % sur

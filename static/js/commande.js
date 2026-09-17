@@ -34,6 +34,8 @@ const ETATS = [
   ['type_demande', 'DDQ', ['ddq']],
   ['type_demande', 'RFI', ['rfi']],
   ['bande_esg', '> 75 % ESG', ['tres esg', 'forte esg', 'esg fort', 'esg forte']],
+  ['soutenance', 'Oui', ['avec oral', 'a l oral', 'soutenance', 'soutenu', 'soutenus', 'oral']],
+  ['sri', 'Oui', ['isr', 'sri', 'socialement responsable']],
 ];
 
 const PERIODES = [
@@ -49,6 +51,9 @@ const PREFIXES = {
   expertise: 'expertise', consultant: 'consultant', fonds: 'fonds', analyste: 'analyste',
   langue: 'langue', statut: 'statut', resultat: 'resultat', type: 'type_demande', famille: 'famille',
   'type de client': 'type_client', 'sous classe': 'sous_classe_actifs', forme: 'forme_juridique',
+  segment: 'segment', commercial: 'commercial', sales: 'commercial', redacteur: 'analyste',
+  writer: 'analyste', relecteur: 'relecteur', reviewer: 'relecteur', isr: 'sri', sri: 'sri',
+  oral: 'soutenance', soutenance: 'soutenance',
 };
 
 export class Commande {

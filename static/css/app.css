@@ -206,6 +206,11 @@ a { color: inherit; }
   display: flex; align-items: center; gap: 24px;
 }
 .marque { display: flex; align-items: center; gap: 14px; text-decoration: none; flex: none; }
+.marque__texte { display: flex; flex-direction: column; line-height: 1.05; }
+.marque__nom { font-family: var(--police-serif); font-size: 19px; color: var(--ink);
+  letter-spacing: -0.005em; white-space: nowrap; }
+.marque__activite { font-size: 9px; font-weight: 620; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--b-72); margin-top: 3px; white-space: nowrap; }
 .marque__logo { height: 26px; color: var(--ink); display: block; }
 .marque__logo svg { height: 100%; width: auto; display: block; }
 .marque__produit {

@@ -9,8 +9,8 @@ import * as api from '../api.js';
 import { paramsAPI } from '../etat.js';
 import { NBSP } from '../format.js';
 
-const COLONNES_DEFAUT = ['date_reception', 'famille', 'client', 'pays', 'classe_actifs',
-  'resultat', 'delai_calendaire'];
+const COLONNES_DEFAUT = ['date_reception', 'famille', 'client', 'classe_actifs', 'etat',
+  'montant_potentiel', 'delai_calendaire'];
 const TAILLE = 100;
 
 export function rendreDossiers(ctx) {
@@ -79,8 +79,8 @@ async function charger(zone, ctx, page) {
     ' · cliquez une ligne pour ouvrir sa fiche');
   zone.append(entete);
 
-  const colonnes = COLONNES_DEFAUT.filter(c => d.colonnes.includes(c)).map(c => ({
-    cle: c, titre: d.libelles[c] || c,
+  const colonnes = COLONNES_DEFAUT.filter(c => c === 'etat' || d.colonnes.includes(c)).map(c => ({
+    cle: c, titre: c === 'etat' ? 'État' : (d.libelles[c] || c),
     num: ['delai_calendaire', 'montant_potentiel', 'nb_questions'].includes(c),
     attenue: ['famille', 'expertise', 'classe_actifs'].includes(c),
     rendu: rendu(c, d.libelles),
@@ -98,8 +98,16 @@ async function charger(zone, ctx, page) {
   }
 }
 
+function etatDe(d) {
+  if (d.famille !== 'RFP') return d.statut === 'En cours' ? 'En cours' : (d.statut || '—');
+  if (d.statut === 'En cours') return 'En rédaction';
+  if (d.resultat === 'En attente') return 'En attente de décision';
+  return d.resultat || d.statut || '—';
+}
+
 function rendu(cle, libelles) {
-  if (cle === 'client') return (d) => cellulesNom(d, ['consultant']);
+  if (cle === 'client') return (d) => cellulesNom(d, ['segment', 'pays']);
+  if (cle === 'etat') return (d) => etatDe(d);
   if (cle === 'date_reception' || cle === 'date_envoi') return (d) => fmtDate(d[cle]);
   if (cle === 'delai_calendaire') return (d) => (d[cle] === null || d[cle] === undefined ? '—' : `${entier(d[cle])}${NBSP}j`);
   if (cle === 'montant_potentiel') return (d) => euros(d[cle]);
@@ -153,15 +161,21 @@ export async function ouvrirFiche(identifiant, ctx) {
   if (d.montant_potentiel) phrase.append(` Encours en jeu : ${euros(d.montant_potentiel)}.`);
   corps.append(phrase);
 
+  const ouiNon = (v) => (v === true ? 'Oui' : (v === false ? 'Non' : null));
   const champs = [
-    ['Consultant', d.consultant], ['Type de client', d.type_client], ['Pays', d.pays],
+    ['Numéro', d.numero], ['Segment', d.segment], ['Type de client', d.type_client], ['Pays', d.pays],
+    ['Consultant', d.consultant], ['Commercial', d.commercial],
     ['Classe d’actifs', d.classe_actifs], ['Sous-classe', d.sous_classe_actifs],
     ['Expertise', d.expertise], ['Fonds de référence', d.fonds],
-    ['Forme juridique', d.forme_juridique], ['Analyste', d.analyste], ['Langue', d.langue],
+    ['Forme juridique', d.forme_juridique], ['Rédacteur', d.analyste], ['Relecteur', d.relecteur],
+    ['Langue', d.langue],
+    ['Dossier remis', d.famille === 'RFP' ? ouiNon(d.a_remis) : null],
+    ['Présélection', d.famille === 'RFP' ? ouiNon(d.a_preselection) : null],
+    ['Soutenance orale', d.famille === 'RFP' ? ouiNon(d.a_oral) : null],
+    ['ISR', d.sri], ['Tranche ESG', d.bande_esg], ['Mise à jour Qvidian', d.qvidian],
     ['Questions', d.nb_questions === null || d.nb_questions === undefined ? null : entier(d.nb_questions)],
-    ['Tranche ESG', d.bande_esg],
     ['Délai cible', d.sla_cible ? `${entier(d.sla_cible)} jours ouvrés` : null],
-  ].filter(([, v]) => v !== null && v !== undefined && v !== '' && v !== 'Non renseigné');
+  ].filter(([, v]) => v !== null && v !== undefined && v !== '' && v !== 'Non renseigné' && v !== 'Sans objet');
   const grille = h('div.champs');
   for (const [c, v] of champs) {
     grille.append(h('div.champ', {}, h('div.champ__c', { texte: c }), h('div.champ__v', { texte: String(v) })));

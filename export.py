@@ -124,6 +124,7 @@ h1,h2,h3,h4,p,dl,dd,ul{margin:0}
 .rail{position:fixed;left:0;top:0;bottom:0;width:var(--rail);z-index:20;
   display:flex;flex-direction:column;gap:20px;padding:26px 22px 20px;
   background:var(--blanc);border-right:1px solid var(--b-12);overflow-y:auto}
+.rail__tete{min-width:0}
 .rail__marque{display:block;height:26px;color:var(--ink)}
 .rail__marque svg{height:100%;width:auto;display:block}
 .rail__produit{margin-top:11px;padding-top:10px;border-top:1px solid var(--b-12)}

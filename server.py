@@ -150,11 +150,12 @@ def _figure(bloc: core.Block) -> dict[str, Any] | None:
 
 
 COLONNES_DOSSIER = [
-    "date_reception", "date_envoi", "famille", "type_demande", "statut", "resultat",
-    "client", "consultant", "type_client", "pays", "fonds", "classe_actifs",
-    "sous_classe_actifs", "forme_juridique", "expertise", "analyste", "langue",
-    "nb_questions", "part_esg", "bande_esg", "montant_potentiel", "delai_calendaire",
-    "delai_ouvre", "sla_cible", "dans_sla", "anciennete_ouvree", "en_retard", "aum_gagne",
+    "numero", "date_reception", "date_envoi", "famille", "type_demande", "statut", "resultat",
+    "client", "segment", "type_client", "pays", "consultant", "commercial", "analyste",
+    "relecteur", "fonds", "classe_actifs", "sous_classe_actifs", "forme_juridique", "expertise",
+    "langue", "montant_potentiel", "a_remis", "a_preselection", "a_oral", "soutenance", "sri",
+    "qvidian", "nb_questions", "part_esg", "bande_esg", "delai_calendaire", "delai_ouvre",
+    "sla_cible", "dans_sla", "anciennete_ouvree", "en_retard", "aum_gagne",
 ]
 LIBELLES_DOSSIER = {
     "date_reception": "Réception", "date_envoi": "Envoi", "famille": "Famille",
@@ -169,6 +170,9 @@ LIBELLES_DOSSIER = {
     "dans_sla": "Dans le délai cible", "anciennete_ouvree": "Ancienneté (j ouvrés)",
     "en_retard": "En retard", "aum_gagne": "Encours remporté (M€)",
     "jours_attente": "Jours d’attente", "jours_chez_nous": "Jours chez nous",
+    "numero": "Numéro", "segment": "Segment", "commercial": "Commercial", "relecteur": "Relecteur",
+    "a_remis": "Dossier remis", "a_preselection": "Présélection", "a_oral": "Soutenance orale",
+    "soutenance": "Soutenance orale", "sri": "ISR", "qvidian": "Mise à jour Qvidian",
 }
 
 
@@ -287,7 +291,7 @@ def meta() -> JSONResponse:
     return JSONResponse(_propre({
         "produit": core.MARQUE_PRODUIT,
         "marque": {"nom": core.MARQUE_NOM, "activite": core.MARQUE_ACTIVITE,
-                   "bleu": core.MARQUE_BLEU},
+                   "bleu": core.MARQUE_BLEU, "logo": core.logo_svg("horizontal")},
         "source": _source(),
         "dates": dates,
         "periodes": _periodes_disponibles(),
@@ -312,10 +316,11 @@ def meta() -> JSONResponse:
 # =============================================================================
 def _carnet(sel: pd.DataFrame, n_lignes: int) -> dict[str, Any]:
     livre = core.carnet(sel)
-    colonnes = ["client", "consultant", "pays", "classe_actifs", "sous_classe_actifs",
-                "fonds", "expertise", "analyste", "statut", "resultat", "montant_potentiel",
-                "date_reception", "date_envoi", "jours_attente", "jours_chez_nous",
-                "anciennete_ouvree", "en_retard", "sla_cible"]
+    colonnes = ["client", "segment", "consultant", "commercial", "pays", "classe_actifs",
+                "sous_classe_actifs", "fonds", "expertise", "analyste", "statut", "resultat",
+                "montant_potentiel", "date_reception", "date_envoi", "jours_attente",
+                "jours_chez_nous", "anciennete_ouvree", "en_retard", "sla_cible",
+                "a_remis", "a_preselection", "a_oral"]
     compartiments = {}
     for cle, libelle, sens in core.COMPARTIMENTS:
         sous = livre.compartiments[cle]
@@ -327,8 +332,16 @@ def _carnet(sel: pd.DataFrame, n_lignes: int) -> dict[str, Any]:
     relances = livre.a_relancer.copy()
     for d in (_dossiers(relances.head(n_lignes), colonnes)):
         pass
+    ouverts = pd.concat([livre.compartiments["en_cours"], livre.compartiments["en_attente"]])
+    if len(ouverts):
+        ouverts = ouverts.sort_values("montant_potentiel", ascending=False, na_position="last")
     return {
         "total": livre.total, "vivants": livre.vivants,
+        "ouverts": {
+            "n": int(len(ouverts)),
+            "encours": float(ouverts["montant_potentiel"].sum(skipna=True)) if len(ouverts) else 0.0,
+            "dossiers": _dossiers(ouverts, colonnes),
+        },
         "compartiments": compartiments,
         "a_relancer": {
             "n": len(relances),
@@ -408,6 +421,8 @@ def analyse(request: Request,
             "rfp": core.nb_famille(sel, core.FAMILLE_RFP),
             "taux_succes": taux, "gagnes": gagnes, "tranches": tranches, "ic": list(ic),
             "encours_remporte": core.aum_gagne(sel), "encours_en_jeu": core.aum_en_jeu(sel),
+            "encours_perdu": core.aum_perdu(sel),
+            "entonnoir": core.entonnoir(sel),
             "delai_dd": core.delai_median(sel, core.FAMILLE_DD),
             "delai_rfp": core.delai_median(sel, core.FAMILLE_RFP),
             "mix_types": {str(k): int(v) for k, v in core.repartition_type(sel).items()},
@@ -656,7 +671,11 @@ def index() -> HTMLResponse:
 
 @app.get("/favicon.svg")
 def favicon() -> Response:
-    return Response(content=core.logo_svg("embleme"), media_type="image/svg+xml")
+    """L’emblème officiel s’il a été déposé dans assets/ ; rien sinon."""
+    svg = core.logo_svg("embleme")
+    if not svg:
+        return Response(status_code=204)
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 if (RACINE / "assets").is_dir():
