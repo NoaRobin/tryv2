@@ -964,6 +964,7 @@ def _bloc_relances(livre: dict) -> str:
         ("Dossier", _nom, ""),
         ("Motif", lambda d: "délai cible dépassé" if d["en_retard"] else "sans réponse du client",
          "attenue"),
+        ("Depuis", lambda d: core.fmt_date_courte(d["date_reception"]) if d["date_reception"] else "–", ""),
         ("Attente", lambda d: _duree(d["jours_chez_nous"] if d["en_retard"]
                                      else d["jours_attente"], maxi, SEUIL_RELANCE), ""),
         ("Encours", lambda d: _e(core.fmt_encours(d["montant_potentiel"])), "num"),
