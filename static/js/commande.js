@@ -46,11 +46,10 @@ const PERIODES = [
 // Préfixes explicites : « pays: suisse », « client = bellecour ».
 const PREFIXES = {
   pays: 'pays', client: 'client', classe: 'classe_actifs', 'classe d actifs': 'classe_actifs',
-  expertise: 'expertise', consultant: 'consultant', fonds: 'fonds', analyste: 'analyste',
+  expertise: 'expertise', consultant: 'consultant', fonds: 'fonds',
   langue: 'langue', statut: 'statut', resultat: 'resultat', type: 'famille', famille: 'famille',
   'type de client': 'type_client', 'sous classe': 'sous_classe_actifs', forme: 'forme_juridique',
-  segment: 'segment', commercial: 'commercial', sales: 'commercial', redacteur: 'analyste',
-  writer: 'analyste', relecteur: 'relecteur', reviewer: 'relecteur', isr: 'sri', sri: 'sri',
+  segment: 'segment', commercial: 'commercial', sales: 'commercial', isr: 'sri', sri: 'sri',
   oral: 'soutenance', soutenance: 'soutenance',
 };
 
@@ -127,15 +126,7 @@ export class Commande {
         resultat.periode = { date_min: `${an}-${String(i + 1).padStart(2, '0')}-01`, date_max: `${an}-${String(i + 1).padStart(2, '0')}-${fin}` };
       }
     }
-    // 4. Écrans et actions ; « à relancer » restreint la liste aux dossiers qui attendent
-    for (const f of ['a relancer', 'relancer', 'relances', 'relance', 'en retard', 'urgents', 'urgent']) {
-      if (this._contient(k, f)) {
-        k = this._retirer(k, f);
-        resultat.attention = true;
-        resultat.ecran = resultat.ecran || 'dossiers';
-        resultat.interpretation.push({ type: 'attention', libelle: 'Liste', valeur: 'À relancer' });
-      }
-    }
+    // 4. Écrans
     for (const [ecran, formes] of ECRANS) {
       for (const f of formes) {
         if (this._contient(k, f)) { k = this._retirer(k, f); resultat.ecran = ecran; }
@@ -167,7 +158,7 @@ export class Commande {
     for (const mot of restants) {
       if (mot.length < 4) { nonReconnus.push(mot); continue; }
       const candidats = this.index.filter(e => e.dim !== 'client' && e.dim !== 'fonds' && e.dim !== 'consultant'
-        && e.dim !== 'analyste' && e.k.split(' ').some(w => w.startsWith(mot)));
+        && e.k.split(' ').some(w => w.startsWith(mot)));
       const dims = new Set(candidats.map(c => c.dim + '|' + c.v));
       if (dims.size === 1) {
         const c = candidats[0];

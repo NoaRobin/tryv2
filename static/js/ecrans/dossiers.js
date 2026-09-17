@@ -18,7 +18,7 @@ export function rendreDossiers(ctx) {
   const ecran = h('div.ecran');
   ecran.append(h('h1.titre-ecran', { texte: 'Dossiers' }));
   ecran.append(h('p.sous-ecran', { texte:
-    'La liste suit le périmètre choisi. La recherche porte sur le client, le fonds, le consultant, le pays, l’expertise et l’analyste.' }));
+    'La liste suit le périmètre choisi. La recherche porte sur le client, le fonds, le consultant, le pays et l’expertise.' }));
 
   const barre = h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center',
     flexWrap: 'wrap', marginBottom: '18px' } });
@@ -27,12 +27,6 @@ export function rendreDossiers(ctx) {
     'aria-label': 'Chercher un dossier', style: { flex: '1 1 260px', fontSize: '14px', padding: '7px 10px' },
   });
   barre.append(champ);
-  const bascule = h('label', { style: { display: 'flex', gap: '8px', alignItems: 'center',
-    fontSize: '13.5px', color: 'var(--b-72)', cursor: 'pointer' } },
-    h('input', { type: 'checkbox', checked: etat.attention || null,
-      onchange: (e) => ctx.majEtat({ attention: e.target.checked }) }),
-    'À relancer seulement');
-  barre.append(bascule);
   ecran.append(barre);
 
   const zone = h('div');
@@ -52,7 +46,6 @@ async function charger(zone, ctx, page) {
   vider(zone).append(chargement('Recherche…'));
   const p = paramsAPI(ctx.etat);
   if (ctx.etat.q) p.set('q', ctx.etat.q);
-  if (ctx.etat.attention) p.set('attention', '1');
   p.set('page', String(page));
   p.set('taille', String(TAILLE));
   let d;
@@ -166,11 +159,11 @@ export async function ouvrirFiche(identifiant, ctx) {
     ['Consultant', d.consultant], ['Commercial', d.commercial],
     ['Classe d’actifs', d.classe_actifs], ['Sous-classe', d.sous_classe_actifs],
     ['Expertise', d.expertise], ['Fonds de référence', d.fonds],
-    ['Forme juridique', d.forme_juridique], ['Rédacteur', d.analyste], ['Relecteur', d.relecteur],
+    ['Forme juridique', d.forme_juridique],
     ['Langue', d.langue],
-    ['Dossier remis', d.famille === 'RFP' ? ouiNon(d.a_remis) : null],
-    ['Présélection', d.famille === 'RFP' ? ouiNon(d.a_preselection) : null],
-    ['Soutenance orale', d.famille === 'RFP' ? ouiNon(d.a_oral) : null],
+    ['Step 1', d.famille === 'RFP' ? ouiNon(d.a_remis) : null],
+    ['Step 2', d.famille === 'RFP' ? ouiNon(d.a_preselection) : null],
+    ['Oral', d.famille === 'RFP' ? ouiNon(d.a_oral) : null],
     ['ISR', d.sri], ['Tranche ESG', d.bande_esg], ['Mise à jour Qvidian', d.qvidian],
     ['Questions', d.nb_questions === null || d.nb_questions === undefined ? null : entier(d.nb_questions)],
     ['Délai cible', d.sla_cible ? `${entier(d.sla_cible)} jours ouvrés` : null],

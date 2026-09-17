@@ -6,7 +6,7 @@
 
 export const ECRANS = ['lecture', 'activite', 'rfp', 'dd', 'aum', 'esg', 'diagnostic', 'dossiers', 'donnees'];
 const CLES_RESERVEES = new Set(['ecran', 'periode', 'date_min', 'date_max', 'q', 'dossier',
-  'granularite', 'esg_mode', 'attention', 'bloc', 'section']);
+  'granularite', 'esg_mode', 'bloc', 'section']);
 
 export function etatVide() {
   return {
@@ -16,7 +16,6 @@ export function etatVide() {
     date_max: null,
     dims: {},                  // dimension → [valeurs]
     q: '',                     // recherche plein texte (écran dossiers)
-    attention: false,          // liste « à relancer » seulement
     dossier: null,             // identifiant d'une fiche ouverte
     granularite: null,         // null = décidée par la durée
     esg_mode: 'part',
@@ -34,7 +33,6 @@ export function lireURL(dimensions) {
   e.date_max = p.get('date_max') || null;
   if (e.date_min || e.date_max) e.periode = 'perso';
   e.q = p.get('q') || '';
-  e.attention = p.get('attention') === '1';
   e.dossier = p.get('dossier') ? Number(p.get('dossier')) : null;
   e.granularite = p.get('granularite') || null;
   e.esg_mode = p.get('esg_mode') || 'part';
@@ -60,7 +58,6 @@ export function versParams(e, { sansEcran = false } = {}) {
     for (const v of valeurs) p.append(dim, v);
   }
   if (e.q) p.set('q', e.q);
-  if (e.attention) p.set('attention', '1');
   if (e.dossier !== null && e.dossier !== undefined) p.set('dossier', String(e.dossier));
   if (e.granularite) p.set('granularite', e.granularite);
   if (e.esg_mode && e.esg_mode !== 'part') p.set('esg_mode', e.esg_mode);
@@ -120,7 +117,6 @@ export function sansFiltres(e) {
   const n = cloner(e);
   n.dims = {};
   n.q = '';
-  n.attention = false;
   return n;
 }
 

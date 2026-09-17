@@ -9,7 +9,7 @@ import { h, vider, nombre, faits, carnet, identites, tableDossiers, cellulesNom,
 import { rendreQuandVisible, tableau as tableauHTML, activerTri } from '../figures.js';
 import { NBSP } from '../format.js';
 
-// Le seuil de relance et l'ordre des indicateurs viennent du moteur (/api/meta).
+// Le seuil d'attente longue et l'ordre des indicateurs viennent du moteur (/api/meta).
 
 /**
  * @param {object} ctx — { analyse, meta, etat, tonsEtat, aller(ecran), filtrer(dim, valeur),
@@ -34,13 +34,12 @@ export function rendreSituation(ctx) {
   ouverture.append(margeOuverture(ctx));
   ecran.append(ouverture);
 
-  // Un bloc absent (pas de relance, une seule année…) ne laisse ni trou ni
-  // numéro perdu : seuls les blocs rendus sont ajoutés, dans cet ordre.
+  // Un bloc absent (une seule année, pas de classe d'actifs…) ne laisse ni trou
+  // ni numéro perdu : seuls les blocs rendus sont ajoutés, dans cet ordre.
   const blocs = [
     blocOuverts(ctx),
     blocCarnet(ctx),
     blocIndicateurs(ctx),
-    analyse.carnet.a_relancer.n ? blocRelances(ctx) : null,
     blocFigure(ctx, 'entonnoir', 'Le chemin des appels d’offres', margeEntonnoir(ctx)),
     blocConstats(ctx),
     blocListes(ctx),
@@ -109,10 +108,6 @@ function ligneDuMatin(ctx) {
   if (attente.n) {
     ligne.append(fait(entier(attente.n), `en attente de décision`,
       () => ctx.listeCompartiment('en_attente'), attente.encours ? euros(attente.encours) : ''));
-  }
-  if (c.a_relancer.n) {
-    ligne.append(fait(entier(c.a_relancer.n), 'à relancer', () => ctx.listeCompartiment('a_relancer'),
-      c.a_relancer.encours ? euros(c.a_relancer.encours) : ''));
   }
   const succes = analyse.kpis.find(k => k.cle === 'succes');
   if (succes && r.tranches) {
@@ -202,8 +197,8 @@ function margeTexte(titre, ...paragraphes) {
 
 function etapeDe(d) {
   if (d.a_oral) return 'Oral';
-  if (d.a_preselection) return 'Présélection';
-  if (d.a_remis) return 'Remis';
+  if (d.a_preselection) return 'Step 2';
+  if (d.a_remis) return 'Step 1';
   return '—';
 }
 
@@ -216,7 +211,7 @@ function blocOuverts(ctx) {
       h('p.prose', { texte: 'Aucun appel d’offres n’est ouvert sur ce périmètre.' }),
     ], margeTexte('Lecture', 'Un appel d’offres est ouvert tant qu’il est en rédaction chez nous ou remis au client sans décision.'));
   }
-  const SEUIL_RELANCE = ctx.meta.jours_relance;
+  const SEUIL_ATTENTE = ctx.meta.seuil_attente;
   const maxi = Math.max(...o.dossiers.map(d => (d.statut === 'En cours' ? d.jours_chez_nous : d.jours_attente) || 0), 1);
   const table = tableDossiers(o.dossiers, [
     { titre: 'Client', rendu: (d) => cellulesNom(d, ['segment', 'pays']) },
@@ -230,9 +225,12 @@ function blocOuverts(ctx) {
       const enRedaction = d.statut === 'En cours';
       const v = enRedaction ? d.jours_chez_nous : d.jours_attente;
       if (v === null || v === undefined) return '—';
-      return h('span', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
-        jauge(v, maxi, { seuil: enRedaction ? undefined : SEUIL_RELANCE }),
-        h('span.num', { texte: `${entier(v)}${NBSP}j` }));
+      const origine = enRedaction ? d.date_reception : d.date_envoi;
+      return h('span', {},
+        h('span', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+          jauge(v, maxi, { seuil: enRedaction ? undefined : SEUIL_ATTENTE }),
+          h('span.num', { texte: `${entier(v)}${NBSP}j` })),
+        origine ? h('span.cellule-sous', { texte: dateCourte(origine) }) : null);
     } },
     { titre: 'Suivi', attenue: true, rendu: (d) => h('span', {},
       d.commercial && d.commercial !== 'Non renseigné' ? d.commercial : '—',
@@ -251,8 +249,8 @@ function blocOuverts(ctx) {
 
   return bloc('ouverts', 'Les appels d’offres ouverts', [intro, table, total], margeTexte('Lecture',
     '<b>En rédaction</b> : la réponse est chez nous, non partie. <b>En attente de décision</b> : remise au client, non tranchée.',
-    '<b>Étape</b> reprend les colonnes Step_1, Step_2 et ORAL_RFP du classeur : dossier remis, présélection, soutenance orale.',
-    '<b>Depuis</b> compte les jours depuis la réception pour un dossier en rédaction, depuis la remise pour un dossier en attente. Le trait s’encre au-delà de quatre mois d’attente.'));
+    '<b>Étape</b> porte le nom des colonnes du classeur : Step 1 (proposition déposée), Step 2 (retenu après lecture) et Oral (présentation devant le client).',
+    '<b>Depuis</b> compte les jours depuis la réception pour un dossier en rédaction, depuis la remise pour un dossier en attente, et rappelle sous le compte la date d’où il part. Le trait s’encre au-delà de quatre mois d’attente.'));
 }
 
 /* ------------------------------------------------------------ carnet ----- */
@@ -278,7 +276,7 @@ function blocCarnet(ctx) {
 
   return bloc('carnet', 'Le carnet d’appels d’offres', corps, margeTexte('Lecture',
     'Le ruban du haut compte les dossiers, un trait par dossier. Celui du bas porte les mêmes états en encours : c’est lui qui dit où se joue l’argent.',
-    '<b>En rédaction</b> et <b>en attente de décision</b> partagent le même résultat, mais appellent deux actions différentes : produire d’un côté, relancer de l’autre.',
+    '<b>En rédaction</b> et <b>en attente de décision</b> partagent le même résultat, mais ne disent pas la même chose : la réponse se produit d’un côté, se décide de l’autre.',
     meta.note_censure));
 }
 
@@ -294,47 +292,11 @@ function blocIndicateurs(ctx) {
     ...choisis.slice(0, 5).map(k => `<b>${k.libelle}</b> — ${k.aide}`)));
 }
 
-/* --------------------------------------------------------- relances ----- */
-function blocRelances(ctx) {
-  const { analyse } = ctx;
-  const liste = analyse.carnet.a_relancer;
-  const SEUIL_RELANCE = ctx.meta.jours_relance;
-  // Une seule horloge, calendaire, comme la colonne « Depuis » des ouverts.
-  const maxi = Math.max(...liste.dossiers.map(d => Math.max(d.jours_attente || 0, d.jours_chez_nous || 0)), 1);
-
-  const intro = h('p.prose', { texte:
-    `${pluriel(liste.n, 'dossier')} ${liste.n > 1 ? 'demandent' : 'demande'} une relance : délai cible dépassé, `
-    + `ou décision attendue depuis plus de quatre mois.`
-    + (liste.encours ? ` ${euros(liste.encours)} d’encours concernés.` : '') });
-
-  const table = tableDossiers(liste.dossiers, [
-    { titre: 'Dossier', rendu: (d) => cellulesNom(d, ['segment', 'pays']) },
-    { titre: 'Motif', attenue: true, rendu: (d) => d.en_retard ? 'délai cible dépassé' : 'sans réponse du client' },
-    { titre: 'Attente', rendu: (d) => {
-      const v = d.en_retard ? d.jours_chez_nous : d.jours_attente;
-      return h('span', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
-        jauge(v, maxi, { seuil: SEUIL_RELANCE }), h('span.num', { texte: `${entier(v)}${NBSP}j` }));
-    } },
-    { titre: 'Encours', num: true, rendu: (d) => euros(d.montant_potentiel) },
-  ], { surLigne: (d) => ctx.ouvrirDossier(d.id) });
-
-  const pied = h('p', { style: { marginTop: '14px' } },
-    lien(`Ouvrir ${liste.n > 1 ? `les ${entier(liste.n)} dossiers` : 'le dossier'}`, () => ctx.listeCompartiment('a_relancer')));
-
-  return bloc('relances', 'Ce qu’il faut relancer', [intro, table, pied], margeTexte('Repères',
-    `<b>Attente</b> compte les jours depuis la remise de la réponse au client ; pour un <b>délai cible dépassé</b>, depuis la réception, de notre côté. Le délai cible, lui, se juge en jours ouvrés.`,
-    `Le seuil de relance est de quatre mois d’attente d’une décision. Le délai cible est paramétré par famille : ${ctx.meta.sla}.`));
-}
-
 /* --------------------------------------------------------- constats ----- */
 function blocConstats(ctx) {
   const { analyse, aller } = ctx;
   const liste = h('div');
-  // Le constat « à relancer » a son propre bloc : le répéter ici ferait lire
-  // deux fois la même phrase.
-  const constats = analyse.carnet.a_relancer.n
-    ? analyse.insights.filter(i => i.cle !== 'attention')
-    : analyse.insights;
+  const constats = analyse.insights;
   if (!constats.length) return null;
   for (const i of constats) {
     const ligne = h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto',
@@ -385,7 +347,8 @@ function margeAnnees() {
 
 function margeClasses() {
   return margeTexte('Lecture',
-    'Ce que chaque classe d’actifs reçoit, remporte et porte d’encours. L’encours remporté le plus haut d’abord ; un clic sur un en-tête trie autrement.',
+    'Ce que chaque classe d’actifs pèse dans l’activité, ce qu’elle reçoit, remporte, perd et coûte en délai. L’encours remporté le plus haut d’abord ; un clic sur un en-tête trie autrement.',
+    '<b>Part</b> est le poids de la classe dans les questionnaires reçus : à comparer à son encours remporté, pour voir si elle rend plus que son volume.',
     'Le détail par classe — taux de succès, encours, intervalles — est dans « Appels d’offres » et « Encours & gains ».');
 }
 
@@ -396,7 +359,7 @@ function margeEntonnoir(ctx) {
   return margeTexte('Lecture',
     'Chaque barre est une étape franchie ; le pourcentage à gauche est la part de l’étape précédente qui passe. L’encours suit les dossiers.',
     remis && gagnes && remis.n
-      ? `Sur ${entier(remis.n)} dossiers remis, ${entier(gagnes.n)} ont abouti à un mandat : ${((gagnes.n / remis.n) * 100).toFixed(0).replace('.', ',')}${NBSP}% des remis.`
+      ? `Sur ${entier(remis.n)} dossiers en Step 1, ${entier(gagnes.n)} ont abouti à un mandat : ${((gagnes.n / remis.n) * 100).toFixed(0).replace('.', ',')}${NBSP}% des Step 1.`
       : null,
     'Les dossiers encore ouverts comptent dans les étapes qu’ils ont franchies, pas dans les remportés.');
 }

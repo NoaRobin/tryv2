@@ -117,8 +117,8 @@ d’analyse, constats — que le serveur et le rapport consomment **à l’ident
 et il calcule lui-même la charge utile de la vue d’ensemble (`carnet_detaille`,
 `resume_situation`) que l’un sert par HTTP et que l’autre imprime. Un chiffre
 affiché à l’écran est le même que dans le rapport, par construction ; les
-constantes que l’écran doit connaître (ordre des indicateurs, seuil de relance,
-longueur des listes) lui sont transmises par `/api/meta`, jamais recopiées.
+constantes que l’écran doit connaître (ordre des indicateurs, seuil d’attente
+longue, longueur des listes) lui sont transmises par `/api/meta`, jamais recopiées.
 
 **Couche métrique.** Chaque indicateur est défini une fois, dans une fonction
 documentée (`carnet`, `taux_succes_rfp`, `aum_gagne`, `cadence_mensuelle`,
@@ -147,8 +147,8 @@ l’ordre : **la liste des appels d’offres ouverts** (client, classe d’actif
 état, étape atteinte, jours d’attente, suivi commercial, encours — le plus gros
 encours d’abord), le carnet des cinq états avec ses identités arithmétiques,
 les indicateurs (succès, encours remporté, perdu, en jeu, présélection, oral,
-délais), les dossiers à relancer, le chemin des appels d’offres (reçus → remis →
-présélectionnés → soutenus → remportés, effectifs et encours à chaque marche),
+délais), le chemin des appels d’offres (reçus → Step 1 → Step 2 → Oral →
+remportés, effectifs et encours à chaque marche),
 ce qui a changé, les listes nommées des gagnés et perdus, **l’année par année**
 (une ligne par exercice du périmètre : reçus, tranchés, taux de succès, encours,
 délai — triable d’un clic sur l’en-tête), **les classes d’actifs** (ce que
@@ -174,7 +174,7 @@ colonnes, la qualité de la lecture.
 
 **Le champ de commande** (`Ctrl K`, `⌘ K` sur Mac, ou `/`) comprend le
 vocabulaire des données : « Suisse 2025 », « gagnés obligataire », « Bellecour »,
-« à relancer », « janvier 2026 », « 2019 ». Ce qu’il a compris est **écrit en toutes
+« janvier 2026 », « 2019 ». Ce qu’il a compris est **écrit en toutes
 lettres avant d’agir** — aucune phrase n’est produite par un modèle de langage,
 c’est un rapprochement de vocabulaire, et il se lit.
 
@@ -188,8 +188,8 @@ c’est un rapprochement de vocabulaire, et il se lit.
 - **Résultat** — n’existe **que** pour un appel d’offres. Une due diligence ne se
   gagne pas : son résultat est « sans objet », pas « perdu ».
 - **Carnet** — les cinq états d’un appel d’offres. « En rédaction » et « en
-  attente de décision » partagent le résultat « en attente » mais appellent deux
-  actions : produire d’un côté, relancer de l’autre.
+  attente de décision » partagent le résultat « en attente » mais ne disent pas la
+  même chose : la réponse se produit d’un côté, se décide de l’autre.
 - **Taux de succès** — gagnés / (gagnés + perdus). Les dossiers non tranchés sont
   exclus du dénominateur ; les compter comme des échecs fabriquerait un
   effondrement sur les périodes récentes.
@@ -271,7 +271,7 @@ serveur, sans réseau.
 C’est le document **diffusé**, et il dit exactement ce que dit l’application :
 sa page « Vue d’ensemble » est l’écran Situation, bloc pour bloc — même phrase
 d’ouverture, même tableau des appels d’offres ouverts, même carnet, mêmes
-indicateurs dans le même ordre, mêmes relances, même chemin, mêmes listes,
+indicateurs dans le même ordre, même chemin, mêmes listes,
 même année par année, mêmes classes d’actifs. Les pages suivantes sont les
 écrans d’analyse. Rien n’est réservé à l’écran, rien n’est réservé au document :
 `python core.py` le vérifie. Le rapport suit le périmètre choisi dans

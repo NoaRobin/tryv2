@@ -295,9 +295,9 @@ LANGUE_NORMALIZATION = {
 # Étapes du processus d’un appel d’offres, telles que le classeur les code.
 # L’interprétation des deux premières est celle du pôle ; elle se règle ici.
 ETAPES_RFP: tuple[tuple[str, str, str], ...] = (
-    ("etape_1", "Dossier remis", "étape 1 : la proposition est déposée"),
-    ("etape_2", "Présélection", "étape 2 : retenu après lecture du dossier"),
-    ("oral", "Soutenance orale", "présentation devant le client"),
+    ("etape_1", "Step 1", "Step_1 : la proposition est déposée"),
+    ("etape_2", "Step 2", "Step_2 : retenu après lecture du dossier"),
+    ("oral", "Oral", "ORAL_RFP : présentation devant le client"),
 )
 
 # Valeur attribuée à une modalité inconnue (elle reste visible, jamais supprimée)
@@ -341,9 +341,9 @@ SLA_DEFAUT = 12
 # de la vue d’ensemble ; au-delà, le reste est agrégé (le total reste exact).
 TOP_MANDATS = 15
 
-# [BRANCHEMENT] Au-delà de ce nombre de jours d’attente d’une décision, un
-# appel d’offres remis devient une relance (quatre mois).
-JOURS_RELANCE = 120
+# [BRANCHEMENT] Au-delà de ce nombre de jours, l’attente d’un appel d’offres
+# ouvert est signalée comme longue sur la jauge du carnet (quatre mois).
+SEUIL_ATTENTE = 120
 
 # [BRANCHEMENT] Horizon de projection de la tendance (mois)
 PROJECTION_MOIS = 6
@@ -380,12 +380,10 @@ DIMENSIONS: dict[str, str] = {
     "forme_juridique": "Forme juridique",
     "fonds": "Fonds de référence",
     "type_client": "Type de client",
-    "soutenance": "Soutenance orale",
+    "soutenance": "Oral",
     "sri": "ISR",
     "bande_esg": "Tranche ESG",
     "statut": "Statut",
-    "analyste": "Rédacteur",
-    "relecteur": "Relecteur",
     "qvidian": "Mise à jour Qvidian",
     "langue": "Langue",
 }
@@ -2704,19 +2702,6 @@ def part_esg_forte(df: pd.DataFrame) -> float:
     return float((connus["bande_esg"] == ESG_FORT).mean())
 
 
-def dossiers_a_surveiller(df: pd.DataFrame) -> pd.DataFrame:
-    """Dossiers qui demandent une attention : en cours au-delà du délai cible,
-    ou RFP en attente de décision depuis plus de JOURS_RELANCE jours (quatre mois)."""
-    if df.empty:
-        return df.head(0)
-    aujourdhui = pd.Timestamp.today().normalize()
-    en_retard = df["en_retard"].fillna(False)
-    attente_longue = (df["est_rfp"] & df["resultat"].eq(RESULTAT_ATTENTE)
-                      & df["date_envoi"].notna()
-                      & ((aujourdhui - df["date_envoi"]).dt.days > JOURS_RELANCE))
-    return df[en_retard | attente_longue].copy()
-
-
 # =============================================================================
 #  CARNET D’APPELS D’OFFRES — la photographie « où en sommes-nous »
 # -----------------------------------------------------------------------------
@@ -2739,7 +2724,6 @@ COMPARTIMENTS: tuple[tuple[str, str, str], ...] = (
 class Carnet:
     """État des appels d’offres de la sélection, à la date du jour."""
     compartiments: dict[str, pd.DataFrame]
-    a_relancer: pd.DataFrame
     total: int
 
     def __getattr__(self, nom: str) -> pd.DataFrame:      # carnet.gagnes, etc.
@@ -2772,7 +2756,7 @@ def carnet(df: pd.DataFrame) -> Carnet:
 
     Le statut fait foi, pas le résultat : « En cours » et « Envoyé » partagent le
     résultat « En attente » alors qu’ils appellent deux actions différentes —
-    rédiger d’un côté, relancer de l’autre.
+    rédiger d’un côté, attendre la décision du client de l’autre.
     """
     if df.empty or "est_rfp" not in df.columns:
         vide = df.head(0)
@@ -2805,14 +2789,7 @@ def carnet(df: pd.DataFrame) -> Carnet:
         colonne = "date_envoi" if compartiments[cle]["date_envoi"].notna().any() else "date_reception"
         compartiments[cle] = compartiments[cle].sort_values(colonne, ascending=False)
 
-    # La liste de relance se lit de haut en bas : le plus pressant d’abord,
-    # que l’attente vienne du client ou de notre propre délai.
-    relances = _horloges(dossiers_a_surveiller(df))
-    if not relances.empty:
-        urgence = relances[["jours_attente", "anciennete_ouvree"]].max(axis=1)
-        relances = relances.assign(_urgence=urgence).sort_values(
-            "_urgence", ascending=False).drop(columns="_urgence")
-    return Carnet(compartiments, relances, len(rfp))
+    return Carnet(compartiments, len(rfp))
 
 
 APPEL_OFFRES = "appel d\u2019offres"
@@ -2911,9 +2888,9 @@ def aum_perdu(df: pd.DataFrame) -> float:
 
 
 def entonnoir(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """Le chemin d’un appel d’offres : reçu, remis, présélectionné, soutenu à
-    l’oral, remporté — effectif et encours à chaque étape, taux de passage
-    depuis l’étape précédente.
+    """Le chemin d’un appel d’offres : reçu, Step 1, Step 2, Oral, remporté —
+    effectif et encours à chaque étape, taux de passage depuis l’étape
+    précédente. Les noms d’étape sont ceux du classeur.
 
     Une étape dont la colonne n’est pas renseignée dans le classeur n’apparaît
     pas : on ne dessine pas un entonnoir sur une donnée absente.
@@ -2924,11 +2901,11 @@ def entonnoir(df: pd.DataFrame) -> list[dict[str, Any]]:
     if rfp.empty:
         return []
     etapes: list[tuple[str, str, pd.Series]] = [("recus", "Reçus", pd.Series(True, index=rfp.index)),
-                                                ("remis", "Remis", rfp["a_remis"])]
+                                                ("remis", "Step 1", rfp["a_remis"])]
     if rfp["etape_2"].notna().any():
-        etapes.append(("preselection", "Présélectionnés", rfp["a_preselection"]))
+        etapes.append(("preselection", "Step 2", rfp["a_preselection"]))
     if rfp["oral"].notna().any():
-        etapes.append(("oral", "Soutenus à l’oral", rfp["a_oral"]))
+        etapes.append(("oral", "Oral", rfp["a_oral"]))
     etapes.append(("gagnes", "Remportés", rfp["est_gagne"]))
 
     sortie: list[dict[str, Any]] = []
@@ -2972,8 +2949,8 @@ def repartition_type(df: pd.DataFrame) -> pd.Series:
 # =============================================================================
 COLONNES_DOSSIER = [
     "numero", "date_reception", "date_envoi", "famille", "statut", "resultat",
-    "client", "segment", "type_client", "pays", "consultant", "commercial", "analyste",
-    "relecteur", "fonds", "classe_actifs", "sous_classe_actifs", "forme_juridique", "expertise",
+    "client", "segment", "type_client", "pays", "consultant", "commercial",
+    "fonds", "classe_actifs", "sous_classe_actifs", "forme_juridique", "expertise",
     "langue", "montant_potentiel", "a_remis", "a_preselection", "a_oral", "soutenance", "sri",
     "qvidian", "nb_questions", "part_esg", "bande_esg", "delai_calendaire", "delai_ouvre",
     "sla_cible", "dans_sla", "anciennete_ouvree", "en_retard", "aum_gagne",
@@ -2984,22 +2961,22 @@ LIBELLES_DOSSIER = {
     "consultant": "Consultant", "type_client": "Type de client", "pays": "Pays",
     "fonds": "Fonds de référence", "classe_actifs": "Classe d’actifs",
     "sous_classe_actifs": "Sous-classe", "forme_juridique": "Forme juridique",
-    "expertise": "Expertise", "analyste": "Rédacteur", "langue": "Langue",
+    "expertise": "Expertise", "langue": "Langue",
     "nb_questions": "Questions", "part_esg": "Part ESG", "bande_esg": "Tranche ESG",
     "montant_potentiel": "Encours (M€)", "delai_calendaire": "Délai (j)",
     "delai_ouvre": "Délai (j ouvrés)", "sla_cible": "Délai cible (j ouvrés)",
     "dans_sla": "Dans le délai cible", "anciennete_ouvree": "Ancienneté (j ouvrés)",
     "en_retard": "En retard", "aum_gagne": "Encours remporté (M€)",
     "jours_attente": "Jours d’attente", "jours_chez_nous": "Jours chez nous",
-    "numero": "Numéro", "segment": "Segment", "commercial": "Commercial", "relecteur": "Relecteur",
-    "a_remis": "Dossier remis", "a_preselection": "Présélection", "a_oral": "Soutenance orale",
-    "soutenance": "Soutenance orale", "sri": "ISR", "qvidian": "Mise à jour Qvidian",
+    "numero": "Numéro", "segment": "Segment", "commercial": "Commercial",
+    "a_remis": "Step 1", "a_preselection": "Step 2", "a_oral": "Oral",
+    "soutenance": "Oral", "sri": "ISR", "qvidian": "Mise à jour Qvidian",
 }
 # Ce qu’un dossier du carnet emporte avec lui : de quoi écrire une ligne de
 # tableau sans repasser par la table complète.
 COLONNES_CARNET = [
     "numero", "client", "segment", "consultant", "commercial", "pays", "classe_actifs",
-    "sous_classe_actifs", "fonds", "expertise", "analyste", "statut", "resultat",
+    "sous_classe_actifs", "fonds", "expertise", "statut", "resultat",
     "montant_potentiel", "date_reception", "date_envoi", "jours_attente", "jours_chez_nous",
     "anciennete_ouvree", "en_retard", "sla_cible", "a_remis", "a_preselection", "a_oral",
 ]
@@ -3074,7 +3051,6 @@ def carnet_detaille(df: pd.DataFrame, n_lignes: int = LIGNES_COMPARTIMENT) -> di
             "encours": livre.encours(cle),
             "dossiers": dossiers_json(sous.head(n_lignes), COLONNES_CARNET),
         }
-    relances = livre.a_relancer
     ouverts = pd.concat([livre.compartiments["en_cours"], livre.compartiments["en_attente"]])
     if len(ouverts):
         ouverts = ouverts.sort_values("montant_potentiel", ascending=False, na_position="last")
@@ -3084,8 +3060,6 @@ def carnet_detaille(df: pd.DataFrame, n_lignes: int = LIGNES_COMPARTIMENT) -> di
         "ouverts": {"n": int(len(ouverts)), "encours": somme(ouverts),
                     "dossiers": dossiers_json(ouverts, COLONNES_CARNET)},
         "compartiments": compartiments,
-        "a_relancer": {"n": int(len(relances)), "encours": somme(relances),
-                       "dossiers": dossiers_json(relances.head(n_lignes), COLONNES_CARNET)},
     }
 
 
@@ -3333,30 +3307,30 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
                     cible="aum", groupe="commercial",
                     aide="Somme des encours des appels d’offres perdus sur la période."))
 
-    # Le chemin de l’appel d’offres : présélection et oral, quand le classeur les code.
+    # Le chemin de l’appel d’offres : Step 2 et Oral, quand le classeur les code.
     remis = df[df["a_remis"]] if "a_remis" in df.columns else df.head(0)
     if len(remis) and df["etape_2"].notna().any():
         part = float(remis["a_preselection"].mean()) if len(remis) else float("nan")
         d = _delta(part, val(lambda f: f.loc[f["a_remis"], "a_preselection"].mean()
                             if f["a_remis"].any() else float("nan")), mode="points")
-        kpis.append(Kpi("preselection", "Présélectionnés", fmt_pct(part, 0),
+        kpis.append(Kpi("preselection", "Step 2", fmt_pct(part, 0),
                         None if pd.isna(part) else float(part),
-                        detail=f"{fmt_int(int(remis['a_preselection'].sum()))} sur {fmt_int(len(remis))} dossiers remis",
+                        detail=f"{fmt_int(int(remis['a_preselection'].sum()))} sur {fmt_int(len(remis))} en Step 1",
                         delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                         cible="rfp", groupe="commercial",
-                        aide="Part des appels d’offres remis retenus après lecture du dossier "
-                             "(étape 2 du processus)."))
+                        aide="Colonne Step_2 du classeur : part des appels d’offres déposés "
+                             "(Step 1) retenus après lecture du dossier."))
     if len(remis) and df["oral"].notna().any():
         part = float(remis["a_oral"].mean()) if len(remis) else float("nan")
         d = _delta(part, val(lambda f: f.loc[f["a_remis"], "a_oral"].mean()
                             if f["a_remis"].any() else float("nan")), mode="points")
-        kpis.append(Kpi("oral", "Soutenus à l’oral", fmt_pct(part, 0),
+        kpis.append(Kpi("oral", "Oral", fmt_pct(part, 0),
                         None if pd.isna(part) else float(part),
-                        detail=f"{fmt_int(int(remis['a_oral'].sum()))} sur {fmt_int(len(remis))} dossiers remis",
+                        detail=f"{fmt_int(int(remis['a_oral'].sum()))} sur {fmt_int(len(remis))} en Step 1",
                         delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
                         cible="rfp", groupe="commercial",
-                        aide="Part des appels d’offres remis ayant donné lieu à une soutenance "
-                             "orale devant le client."))
+                        aide="Colonne ORAL_RFP du classeur : part des appels d’offres déposés "
+                             "(Step 1) ayant donné lieu à une présentation devant le client."))
 
     # Le volume de questions n’existe que si le classeur le porte.
     if df["nb_questions"].notna().any():
@@ -3406,19 +3380,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
     insights: list[Insight] = []
     prec = df_precedent if df_precedent is not None and not df_precedent.empty else None
 
-    # 1. Dossiers qui demandent une action
-    surveiller = dossiers_a_surveiller(df)
-    if len(surveiller):
-        en_jeu = float(surveiller["montant_potentiel"].sum(skipna=True))
-        insights.append(Insight(
-            "attention",
-            f"{pluriel(len(surveiller), 'dossier')} "
-                f"{'demande' if len(surveiller) < 2 else 'demandent'} une relance : délai cible "
-            f"dépassé ou décision attendue depuis plus de quatre mois.",
-            f"{fmt_encours(en_jeu)} d’encours concernés" if en_jeu else "",
-            ton="alerte", cible="explorateur"))
-
-    # 2. Volume par rapport à la période précédente
+    # 1. Volume par rapport à la période précédente
     if prec is not None and len(prec) > 0:
         variation = (len(df) - len(prec)) / len(prec)
         if abs(variation) >= 0.05:
@@ -3431,7 +3393,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 ton="info", cible="activite",
                 serie=tuple(_serie_mensuelle(df))))
 
-    # 3. Croissance structurelle
+    # 2. Croissance structurelle
     for horizon in HORIZONS_CROISSANCE:
         c = croissance(df, horizon)
         if c is not None and c.complete and abs(c.taux) >= 0.15:
@@ -3445,7 +3407,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 ton="info", cible="activite"))
             break
 
-    # 4. Déformation du mix
+    # 3. Déformation du mix
     annuel = volume_annuel(df)
     if len(annuel) >= 4 and FAMILLE_DD in annuel.columns:
         parts = annuel[FAMILLE_DD] / annuel["Total"].replace(0, np.nan)
@@ -3460,7 +3422,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 if annuel[FAMILLE_RFP].std() < annuel[FAMILLE_RFP].mean() * 0.35 else "",
                 ton="info", cible="activite"))
 
-    # 5. Délai de traitement
+    # 4. Délai de traitement
     if prec is not None:
         actuel, avant = delai_median(df), delai_median(prec)
         if all(map(math.isfinite, (actuel, avant))) and abs(actuel - avant) >= 2:
@@ -3473,7 +3435,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 f"{fmt_dec(actuel, 0, 'j')} contre {fmt_dec(avant, 0, 'j')}",
                 ton="alerte" if actuel > avant else "positif", cible="activite"))
 
-    # 6. Encours en attente de décision
+    # 5. Encours en attente de décision
     attente = df[df["est_rfp"] & df["resultat"].eq(RESULTAT_ATTENTE)]
     if len(attente):
         montant = float(attente["montant_potentiel"].sum(skipna=True))
@@ -3491,7 +3453,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 f"de l’encours déjà remporté sur la période",
                 ton="info", cible="rfp"))
 
-    # 7. Concentration client
+    # 6. Concentration client
     if _dispo(df, "client", min_modalites=3):
         comptes = df["client"].value_counts()
         part = comptes.iloc[0] / len(df)
@@ -3503,7 +3465,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 f"{fmt_int(int(comptes.iloc[0]))} dossiers",
                 ton="info", cible="explorateur"))
 
-    # 8. Mois le plus chargé de l’année en cours
+    # 7. Mois le plus chargé de l’année en cours
     annee = df["date_reception"].dt.year.max()
     courante = df[df["date_reception"].dt.year == annee]
     if len(courante) >= 12:
@@ -3517,7 +3479,7 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
                 f"contre {fmt_dec(par_mois.mean(), 0)} en moyenne mensuelle",
                 ton="info", cible="activite"))
 
-    # 8 bis. Le chemin des appels d’offres remis
+    # 7 bis. Le chemin des appels d’offres déposés
     chemin = entonnoir(df)
     par_cle = {e["cle"]: e for e in chemin}
     if "remis" in par_cle and par_cle["remis"]["n"] >= 8 and ("oral" in par_cle or "preselection" in par_cle):
@@ -3525,20 +3487,20 @@ def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
         morceaux = []
         if "preselection" in par_cle:
             morceaux.append(f"{fmt_int(par_cle['preselection']['n'])} "
-                            f"({fmt_pct(par_cle['preselection']['n'] / remis, 0)}) présélectionnés")
+                            f"({fmt_pct(par_cle['preselection']['n'] / remis, 0)}) en Step 2")
         if "oral" in par_cle:
             morceaux.append(f"{fmt_int(par_cle['oral']['n'])} "
-                            f"({fmt_pct(par_cle['oral']['n'] / remis, 0)}) soutenus à l’oral")
+                            f"({fmt_pct(par_cle['oral']['n'] / remis, 0)}) en Oral")
         gagnes_n = par_cle["gagnes"]["n"]
         insights.append(Insight(
             "chemin",
-            f"Sur {fmt_int(remis)} appels d’offres remis, {' et '.join(morceaux)}, "
+            f"Sur {fmt_int(remis)} appels d’offres en Step 1, {' et '.join(morceaux)}, "
             f"{fmt_int(gagnes_n)} remporté{accord(gagnes_n)}.",
             f"{fmt_encours(par_cle['gagnes']['encours'])} d’encours remporté" if par_cle["gagnes"]["encours"] else "",
             ton="info", cible="rfp"))
 
 
-    # 9. ESG
+    # 8. ESG
     connus = df[df["bande_esg"] != ESG_INCONNU]
     if len(connus) >= 30:
         parts = connus.groupby(connus["date_reception"].dt.year)["esg_fort"].mean()
@@ -3887,49 +3849,54 @@ def _bloc_annees(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block 
 
 
 def _bloc_classes_actifs(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """Les classes d’actifs : ce que chacune reçoit, remporte et porte
-    d’encours. Une ligne par classe, l’encours remporté le plus haut d’abord."""
+    """Les classes d’actifs : ce que chacune pèse dans l’activité, ce qu’elle
+    reçoit, remporte, perd et coûte en délai. Une ligne par classe, l’encours
+    remporté le plus haut d’abord."""
     if not _dispo(df, "classe_actifs", min_modalites=2):
         return None
     lignes = []
     total_remporte = aum_gagne(df)
+    total_recus = len(df)
     for classe, sous in df.groupby("classe_actifs", observed=True):
-        taux, gagnes, tranches, _ = taux_succes_rfp(sous)
+        taux, gagnes, _, _ = taux_succes_rfp(sous)
         remporte = aum_gagne(sous)
         rfp = sous[sous["est_rfp"]]
-        ouverts = int(rfp["statut"].isin([STATUT_EN_COURS, STATUT_ENVOYE]).sum())
         lignes.append({
-            "Classe d’actifs": str(classe),
+            "Classe": str(classe),
             "Reçus": fmt_int(len(sous)),
+            "Part": fmt_pct(len(sous) / total_recus if total_recus else float("nan"), 0),
             "DD": fmt_int(nb_famille(sous, FAMILLE_DD)),
             "RFP": fmt_int(len(rfp)),
             "Gagnés": fmt_int(gagnes),
             "Succès": fmt_pct(taux, 0),
             "Remporté": fmt_encours(remporte),
-            "Ouverts": fmt_int(ouverts),
+            "Perdu": fmt_encours(aum_perdu(sous)),
             "En jeu": fmt_encours(aum_en_jeu(sous)),
+            "Délai": fmt_jours(delai_median(sous)),
             "_tri": (remporte, len(sous)),
         })
     lignes.sort(key=lambda l: l["_tri"], reverse=True)
     # « Non renseigné » ferme la marche : il n’est pas une classe.
-    lignes.sort(key=lambda l: l["Classe d’actifs"] == VALEUR_INCONNUE)
+    lignes.sort(key=lambda l: l["Classe"] == VALEUR_INCONNUE)
     for l in lignes:
         l.pop("_tri")
     table = pd.DataFrame(lignes)
-    tete = next((l for l in lignes if l["Classe d’actifs"] != VALEUR_INCONNUE), lignes[0])
-    part = (aum_gagne(df[df["classe_actifs"] == tete["Classe d’actifs"]]) / total_remporte
-            if total_remporte else float("nan"))
+    tete = next((l for l in lignes if l["Classe"] != VALEUR_INCONNUE), lignes[0])
+    part_gagnee = (aum_gagne(df[df["classe_actifs"] == tete["Classe"]]) / total_remporte
+                   if total_remporte else float("nan"))
     accroche = (f"{pluriel(len(lignes), 'classe d’actifs', 'classes d’actifs')} sur la période. "
-                f"« {tete['Classe d’actifs']} » porte {fmt_pct(part, 0)} de l’encours remporté "
-                f"({tete['Remporté']}), avec un taux de succès de {tete['Succès']}."
+                f"« {tete['Classe']} » porte {fmt_pct(part_gagnee, 0)} de l’encours "
+                f"remporté ({tete['Remporté']}) pour {tete['Part']} des questionnaires reçus, "
+                f"avec un taux de succès de {tete['Succès']}."
                 if total_remporte else
                 f"{pluriel(len(lignes), 'classe d’actifs', 'classes d’actifs')} sur la période, "
                 f"aucun mandat remporté.")
     return Block("classes_actifs", "synthese", "Les classes d’actifs", accroche, None, table,
-                 note="Questionnaires reçus, dont due diligence (DD) et appels d’offres (RFP) ; "
-                      "mandats gagnés et taux de succès sur les dossiers tranchés de la classe ; "
-                      "encours remporté ; appels d’offres ouverts — en rédaction ou en attente de "
-                      "décision — et leur encours en jeu. Un clic sur un en-tête trie le tableau.",
+                 note="Questionnaires reçus et leur part du total, dont due diligence (DD) et "
+                      "appels d’offres (RFP) ; mandats gagnés et taux de succès sur les "
+                      "dossiers tranchés de la classe ; encours remporté et encours perdu ; "
+                      "encours en jeu des appels d’offres encore ouverts ; délai médian de "
+                      "traitement, en jours calendaires. Un clic sur un en-tête trie le tableau.",
                  large=True, dimension="classe_actifs", triable=True)
 
 
@@ -4596,9 +4563,9 @@ def _bloc_entonnoir(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Blo
 
     remis = next((e for e in chemin if e["cle"] == "remis"), chemin[0])
     dernier = chemin[-1]
-    accroche = (f"Sur {fmt_int(chemin[0]['n'])} appels d’offres reçus, {fmt_int(remis['n'])} remis ; "
+    accroche = (f"Sur {fmt_int(chemin[0]['n'])} appels d’offres reçus, {fmt_int(remis['n'])} en Step 1 ; "
                 f"{fmt_int(dernier['n'])} remporté{accord(dernier['n'])} "
-                f"({fmt_pct(dernier['n'] / remis['n'] if remis['n'] else float('nan'), 0)} des remis), "
+                f"({fmt_pct(dernier['n'] / remis['n'] if remis['n'] else float('nan'), 0)} des Step 1), "
                 f"pour {fmt_encours(dernier['encours'])} d’encours.")
     tableau = pd.DataFrame({
         "Étape": libelles, "Appels d’offres": [fmt_int(n) for n in effectifs],
@@ -4607,9 +4574,10 @@ def _bloc_entonnoir(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Blo
         "Passage depuis l’étape précédente": [fmt_pct(e["passage"], 0) if pd.notna(e["passage"]) else "—"
                                               for e in chemin]})
     return Block("entonnoir", "rfp", "Le chemin des appels d’offres", accroche, fig, tableau,
-                 note="Les étapes viennent des colonnes Step_1, Step_2 et ORAL_RFP du classeur, "
-                      "lues comme : dossier remis, présélection, soutenance orale. Les dossiers "
-                      "encore en attente comptent dans les étapes franchies, pas dans les remportés.",
+                 note="Les étapes portent le nom des colonnes du classeur : Step 1 (Step_1, "
+                      "proposition déposée), Step 2 (Step_2, retenu après lecture) et Oral "
+                      "(ORAL_RFP, présentation devant le client). Les dossiers encore en attente "
+                      "comptent dans les étapes franchies, pas dans les remportés.",
                  large=True)
 
 
@@ -4630,9 +4598,9 @@ def _bloc_rfp_ouverts(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> B
         if l.get("a_oral"):
             etape.append("Oral")
         elif l.get("a_preselection"):
-            etape.append("Présélection")
+            etape.append("Step 2")
         elif l.get("a_remis"):
-            etape.append("Remis")
+            etape.append("Step 1")
         else:
             etape.append("—")
     # Huit colonnes, pas plus : le suivi commercial et le consultant sont sur
@@ -5128,55 +5096,6 @@ def _bloc_delai_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
                       "la médiane.", large=True)
 
 
-def _bloc_charge_analyste(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    """La charge par rédacteur : en questions quand le classeur les compte, en
-    dossiers sinon."""
-    if not _dispo(df, "analyste", min_modalites=2):
-        return None
-    agg = agg_dimension(df, "analyste")
-    agg = agg[agg["volume"] >= 3]
-    if len(agg) < 2:
-        return None
-    en_questions = bool(df["nb_questions"].notna().any())
-    mesure, libelle_mesure = ("questions", "Questions traitées") if en_questions else ("volume", "Dossiers")
-    agg = agg.sort_values(mesure)
-    fig = _fig(max(300, 38 * len(agg) + 90))
-    fig.add_trace(go.Bar(
-        y=agg["analyste"], x=agg[mesure], orientation="h",
-        marker=_marque(SERIES[0]),
-        text=[fmt_int(q) for q in agg[mesure]],
-        textposition="outside", cliponaxis=False, textfont=dict(color=INK_2, size=11.5),
-        customdata=np.stack([agg["volume"], agg["delai_median"], agg["taux_sla"] * 100], axis=-1),
-        hovertemplate=("<b>%{y}</b><br>%{x:,.0f} " + libelle_mesure.lower()
-                       + "<br>%{customdata[0]:.0f} dossiers"
-                       "<br>Délai médian : %{customdata[1]:.0f} j"
-                       "<br>Respect du délai : %{customdata[2]:.0f} %<extra></extra>"),
-    ))
-    fig.update_xaxes(title_text=libelle_mesure)
-    _labels_exterieurs(fig, list(agg[mesure]), 1.18)
-    _axe_valeurs(fig, float(agg[mesure].max()) * 1.18, fmt_compact)
-
-    total = float(agg[mesure].sum())
-    part_max = (agg[mesure].max() / total) if total else float("nan")
-    accroche = (f"{fmt_int(total)} {libelle_mesure.lower()} réparti{'e' if en_questions else ''}s "
-                f"sur {len(agg)} rédacteurs ; la charge la plus lourde représente "
-                f"{fmt_pct(part_max, 1)} du total.")
-    tableau = agg.sort_values(mesure, ascending=False)[
-        ["analyste", "volume", "questions", "delai_median", "taux_sla", "taux_succes"]].copy()
-    if not en_questions:
-        tableau = tableau.drop(columns="questions")
-    tableau["delai_median"] = tableau["delai_median"].map(fmt_jours)
-    tableau["taux_sla"] = tableau["taux_sla"].map(lambda v: fmt_pct(v, 1))
-    tableau["taux_succes"] = tableau["taux_succes"].map(lambda v: fmt_pct(v, 1))
-    tableau.columns = (["Rédacteur", "Dossiers"] + (["Questions traitées"] if en_questions else [])
-                       + ["Délai médian", "Respect du délai", "Taux de succès"])
-    return Block("charge_analyste", "activite", "Répartition de la charge par rédacteur",
-                 accroche, fig, tableau,
-                 note="Vue de charge, pas de performance : la nature des dossiers reçus "
-                      "varie, et le taux de succès dépend d’abord du marché adressé.",
-                 dimension="analyste")
-
-
 def _bloc_saisonnalite(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
     if df.empty or df["annee"].nunique() < 2:
         return None
@@ -5451,7 +5370,7 @@ _CONSTRUCTEURS: tuple[Callable[[pd.DataFrame, pd.DataFrame, dict], Block | None]
     _bloc_flux_famille, _bloc_mandats_remportes,
     # 02 Activité
     _bloc_volume_annuel, _bloc_cadence, _bloc_delai_famille, _bloc_delai_evolution,
-    _bloc_saisonnalite, _bloc_charge_analyste,
+    _bloc_saisonnalite,
     # 03 Appels d’offres
     _bloc_rfp_ouverts, _bloc_entonnoir, _bloc_resultats_rfp, _bloc_rfp_resultats_annee,
     _bloc_rfp_reception, _bloc_rfp_succes_dimension, _bloc_rfp_segment, _bloc_rfp_consultants,
@@ -5581,7 +5500,6 @@ COLONNES_EXPORT: dict[str, str] = {
     "pays": "Pays",
     "fonds": "Fonds",
     "classe_actifs": "Classe d’actifs",
-    "analyste": "Rédacteur",
     "langue": "Langue",
     "nb_questions": "Questions",
     "delai_ouvre": "Délai (j ouvrés)",
@@ -5591,7 +5509,7 @@ COLONNES_EXPORT: dict[str, str] = {
 
 
 CHAMPS_RECHERCHE = ("client", "consultant", "pays", "fonds", "classe_actifs",
-                    "sous_classe_actifs", "expertise", "analyste", "relecteur", "commercial",
+                    "sous_classe_actifs", "expertise", "commercial",
                     "segment", "famille", "statut", "resultat", "forme_juridique", "numero")
 
 
@@ -5722,14 +5640,14 @@ def _autotest() -> None:
     assert len(identifiants) == len(set(identifiants)), "un dossier compté deux fois"
     assert livre.vivants == livre.n("en_cours") + livre.n("en_attente")
     assert livre.gagnes["est_gagne"].all() and livre.perdus["est_perdu"].all()
-    # La liste de relance porte ses deux horloges, sinon elle afficherait « — ».
-    if not livre.a_relancer.empty:
-        horloges = livre.a_relancer[["jours_chez_nous", "jours_attente"]]
-        assert horloges.notna().any(axis=1).all(), "un dossier à relancer sans horloge"
+    # Un dossier ouvert porte son horloge, sinon le carnet afficherait « — ».
+    for cle in ("en_cours", "en_attente"):
+        horloges = livre.compartiments[cle][["jours_chez_nous", "jours_attente"]]
+        assert horloges.notna().any(axis=1).all(), f"un dossier {cle} sans horloge"
     types = repartition_type(df)
     assert types.sum() == len(df) and set(types.index) <= set(TYPE_ORDER)
     print(f"   ✓ {fmt_int(livre.total)} RFP ventilés sans perte, "
-          f"{fmt_int(livre.vivants)} vivants, {fmt_int(len(livre.a_relancer))} à relancer")
+          f"{fmt_int(livre.vivants)} vivants")
 
     print("8. Le rapport montre exactement ce que montre l’écran")
     # La promesse du produit : aucun bloc, aucun indicateur réservé à l’écran.

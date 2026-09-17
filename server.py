@@ -251,7 +251,7 @@ def meta() -> JSONResponse:
         # Les constantes que l’écran doit connaître viennent du moteur, jamais
         # d’une seconde copie en JavaScript.
         "choix_kpi_situation": list(core.CHOIX_KPI_SITUATION),
-        "jours_relance": core.JOURS_RELANCE,
+        "seuil_attente": core.SEUIL_ATTENTE,
         "lignes_compartiment": core.LIGNES_COMPARTIMENT,
         "aujourdhui": dt.date.today().isoformat(),
         "version": ETAT.version,
@@ -329,7 +329,6 @@ def analyse(request: Request,
 @app.get("/api/dossiers")
 def dossiers(request: Request,
              q: str = Query(default=""),
-             attention: int = Query(default=0),
              tri: str = Query(default="date_reception"),
              ordre: str = Query(default="desc"),
              page: int = Query(default=1, ge=1),
@@ -337,8 +336,6 @@ def dossiers(request: Request,
     _exiger_donnees()
     filtres, _ = _filtres_depuis(request)
     table = core.filter_data(ETAT.df, filtres)
-    if attention:
-        table = core.dossiers_a_surveiller(table)
     if q.strip():
         motif = core.cle_recherche(q)
         if motif:

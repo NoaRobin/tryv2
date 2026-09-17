@@ -187,12 +187,7 @@ function peindrePerimetre() {
       h('button.puce__x', { type: 'button', 'aria-label': 'Retirer la recherche', texte: '×',
         onclick: () => majEtat({ q: '' }) })));
   }
-  if (App.etat.attention) {
-    puces.append(h('span.puce', {}, h('b', { texte: 'Liste' }), 'À relancer',
-      h('button.puce__x', { type: 'button', 'aria-label': 'Retirer', texte: '×',
-        onclick: () => majEtat({ attention: false }) })));
-  }
-  if (Etat.nbFiltres(App.etat) || App.etat.q || App.etat.attention) {
+  if (Etat.nbFiltres(App.etat) || App.etat.q) {
     puces.append(lien('Tout retirer', () => retirerTout()));
   }
   if (puces.childNodes.length) int.append(puces);
@@ -303,7 +298,7 @@ function contexte() {
       App.fermerFiche = null;
     },
     listeOuverts: () => {
-      let etat = { ...Etat.cloner(App.etat), ecran: 'dossiers', q: '', attention: false };
+      let etat = { ...Etat.cloner(App.etat), ecran: 'dossiers', q: '' };
       etat = Etat.retirerFiltre(etat, 'statut');
       etat = Etat.retirerFiltre(etat, 'resultat');
       etat = Etat.ajouterFiltre(etat, 'famille', 'RFP');
@@ -313,14 +308,13 @@ function contexte() {
       rafraichir();
     },
     listeCompartiment: (cle) => {
-      const modif = { ecran: 'dossiers', q: '', attention: false };
+      const modif = { ecran: 'dossiers', q: '' };
       let etat = { ...Etat.cloner(App.etat), ...modif };
       etat = Etat.retirerFiltre(etat, 'statut');
       etat = Etat.retirerFiltre(etat, 'resultat');
       const statuts = { en_cours: 'En cours', en_attente: 'Envoyé', gagnes: 'Gagné',
         perdus: 'Perdu', sans_suite: 'Abandonné' };
-      if (cle === 'a_relancer') etat.attention = true;
-      else if (statuts[cle]) {
+      if (statuts[cle]) {
         etat = Etat.retirerFiltre(etat, 'famille');
         etat = Etat.ajouterFiltre(etat, 'famille', 'RFP');
         etat = Etat.ajouterFiltre(etat, 'statut', statuts[cle]);
@@ -376,7 +370,7 @@ function ouvrirPalette() {
     if (!propositions.length) {
       liste.append(h('div.palette__vide', { texte:
         champ.value.trim() ? 'Rien ne correspond. La saisie deviendra une recherche plein texte.'
-          : 'Exemples : « Suisse 2025 », « gagnés obligataire », « Bellecour », « à relancer », « esg ».' }));
+          : 'Exemples : « Suisse 2025 », « gagnés obligataire », « Bellecour », « esg ».' }));
       return;
     }
     propositions.forEach((p, i) => {
@@ -457,7 +451,6 @@ function appliquer(lu) {
   for (const [dim, valeurs] of Object.entries(lu.filtres)) {
     for (const v of valeurs) etat = Etat.ajouterFiltre(etat, dim, v);
   }
-  if (lu.attention) etat.attention = true;
   if (lu.q.length) { etat.q = lu.q.join(' '); etat.ecran = 'dossiers'; }
   if (lu.ecran === 'rapport') { App.etat = etat; rafraichir().then(telechargerRapport); return; }
   if (lu.ecran) etat.ecran = lu.ecran === 'lecture' ? 'lecture' : lu.ecran;

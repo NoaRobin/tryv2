@@ -541,7 +541,7 @@ def _methodologie_html(analyse: core.Analysis) -> str:
          "la date d’envoi de la réponse — comme au comité. Le respect du délai cible, lui, "
          "se mesure en jours ouvrés. Les dossiers non envoyés n’entrent dans aucune "
          "statistique de délai de traitement ; leur ancienneté, elle, est suivie dans "
-         "« Ce qu’il faut relancer »."),
+         "« Les appels d’offres ouverts »."),
         ("Délai cible",
          f"Engagement interne de traitement ({_e(core.sla_libelle())}). "
          f"Paramétrable dans <code>core.py</code>."),
@@ -637,7 +637,7 @@ def _methodologie_html(analyse: core.Analysis) -> str:
 #  mêmes fonctions de core.py que l’écran — `carnet_detaille`, `resume_situation`,
 #  `fmt_encours` — donc aucune ne peut différer d’une surface à l’autre.
 # =============================================================================
-SEUIL_RELANCE = core.JOURS_RELANCE    # au-delà, le trait d’attente s’encre
+SEUIL_ATTENTE = core.SEUIL_ATTENTE    # au-delà, le trait d’attente s’encre
 # Deux états se distinguent aussi par leur texture : le ton ne porte jamais seul.
 TEXTURES = {"en_cours": "texture-redaction", "sans_suite": "texture-sanssuite"}
 INCONNU = core.VALEUR_INCONNUE
@@ -711,9 +711,9 @@ def _etape(d: dict) -> str:
     if d.get("a_oral"):
         return "Oral"
     if d.get("a_preselection"):
-        return "Présélection"
+        return "Step 2"
     if d.get("a_remis"):
-        return "Remis"
+        return "Step 1"
     return "—"
 
 
@@ -767,15 +767,11 @@ def _ouverture_html(analyse: core.Analysis, livre: dict, resume: dict) -> str:
     lede = (f'<p class="lede">{"".join(phrase)}'
             f'<span class="attenue">{"".join(suite)}</span></p>')
 
-    # Les trois chiffres du matin : ce qui appelle une action, ce qui est acquis.
+    # Les chiffres du matin : ce qui est encore ouvert, ce qui est acquis.
     matin = []
     if attente["n"]:
         matin.append(f'<span><b>{core.fmt_int(attente["n"])}</b> en attente de décision'
                      f'<span> · {_e(core.fmt_encours(attente["encours"]))}</span></span>')
-    relances = livre["a_relancer"]
-    if relances["n"]:
-        matin.append(f'<span><b>{core.fmt_int(relances["n"])}</b> à relancer'
-                     f'<span> · {_e(core.fmt_encours(relances["encours"]))}</span></span>')
     succes = next((k for k in analyse.kpis if k.cle == "succes"), None)
     if succes is not None and resume["tranches"]:
         matin.append(f'<span><b>{_e(succes.affichage)}</b> de succès<span> · '
@@ -829,11 +825,11 @@ def _bloc_ouverts(livre: dict) -> str:
         "Lecture",
         "<b>En rédaction</b> : la réponse est chez nous, non partie. "
         "<b>En attente de décision</b> : remise au client, non tranchée.",
-        "<b>Étape</b> reprend les colonnes Step_1, Step_2 et ORAL_RFP du classeur : "
-        "dossier remis, présélection, soutenance orale.",
+        "<b>Étape</b> porte le nom des colonnes du classeur : Step 1 (proposition déposée), "
+        "Step 2 (retenu après lecture) et Oral (présentation devant le client).",
         "<b>Depuis</b> compte les jours depuis la réception pour un dossier en rédaction, "
-        "depuis la remise pour un dossier en attente. Le trait s’encre au-delà de quatre "
-        "mois d’attente.")
+        "depuis la remise pour un dossier en attente, et rappelle sous le compte la date "
+        "d’où il part. Le trait s’encre au-delà de quatre mois d’attente.")
     if not o["n"]:
         return _bloc("ouverts", "Les appels d’offres ouverts",
                      '<p class="prose">Aucun appel d’offres n’est ouvert sur ce périmètre.</p>',
@@ -846,7 +842,12 @@ def _bloc_ouverts(livre: dict) -> str:
     def depuis(d: dict) -> str:
         en_redaction = d["statut"] == core.STATUT_EN_COURS
         v = d["jours_chez_nous"] if en_redaction else d["jours_attente"]
-        return _duree(v, maxi, None if en_redaction else SEUIL_RELANCE)
+        origine = d["date_reception"] if en_redaction else d["date_envoi"]
+        duree = _duree(v, maxi, None if en_redaction else SEUIL_ATTENTE)
+        if not origine:
+            return duree
+        return duree + (f'<span class="cellule-sous">'
+                        f'{_e(core.fmt_date_courte(origine))}</span>')
 
     def classe(d: dict) -> str:
         fonds = _val(d, "fonds")
@@ -933,7 +934,7 @@ def _bloc_carnet(livre: dict, resume: dict) -> str:
         "Le ruban du haut compte les dossiers, un trait par dossier. Celui du bas porte "
         "les mêmes états en encours : c’est lui qui dit où se joue l’argent.",
         "<b>En rédaction</b> et <b>en attente de décision</b> partagent le même résultat, "
-        "mais appellent deux actions différentes : produire d’un côté, relancer de l’autre.",
+        "mais ne disent pas la même chose : la réponse se produit d’un côté, se décide de l’autre.",
         _e(core.NOTE_CENSURE)))
 
 
@@ -948,46 +949,9 @@ def _bloc_indicateurs(analyse: core.Analysis) -> str:
                  _marge("Définitions", *definitions))
 
 
-# --------------------------------------------------------------- relances ---
-def _bloc_relances(livre: dict) -> str:
-    liste = livre["a_relancer"]
-    if not liste["n"]:
-        return ""
-    dossiers = liste["dossiers"]
-    maxi = max([max(d["jours_attente"] or 0, d["jours_chez_nous"] or 0) for d in dossiers] + [1])
-    intro = (f'<p class="prose">{core.pluriel(liste["n"], "dossier")} '
-             f'{"demandent" if liste["n"] > 1 else "demande"} une relance : délai cible '
-             f'dépassé, ou décision attendue depuis plus de quatre mois.'
-             + (f' {core.fmt_encours(liste["encours"])} d’encours concernés.'
-                if liste["encours"] else "") + '</p>')
-    table = _table(dossiers, [
-        ("Dossier", _nom, ""),
-        ("Motif", lambda d: "délai cible dépassé" if d["en_retard"] else "sans réponse du client",
-         "attenue"),
-        ("Depuis", lambda d: core.fmt_date_courte(d["date_reception"]) if d["date_reception"] else "–", ""),
-        ("Attente", lambda d: _duree(d["jours_chez_nous"] if d["en_retard"]
-                                     else d["jours_attente"], maxi, SEUIL_RELANCE), ""),
-        ("Encours", lambda d: _e(core.fmt_encours(d["montant_potentiel"])), "num"),
-    ])
-    reste = liste["n"] - len(dossiers)
-    pied = _pied(f"{core.pluriel(liste['n'], 'dossier')} à relancer"
-                 + (f" — {core.fmt_int(reste)} au-delà de cette liste" if reste > 0 else ""),
-                 core.fmt_encours(liste["encours"]) if liste["encours"] else "")
-    return _bloc("relances", "Ce qu’il faut relancer", intro + table + pied, _marge(
-        "Repères",
-        "<b>Attente</b> compte les jours depuis la remise de la réponse au client ; pour un "
-        "<b>délai cible dépassé</b>, depuis la réception, de notre côté. Le délai cible, lui, "
-        "se juge en jours ouvrés.",
-        f"Le seuil de relance est de quatre mois d’attente d’une décision. Le délai cible "
-        f"est paramétré par famille : {_e(core.sla_libelle())}."))
-
-
 # --------------------------------------------------------------- constats ---
 def _bloc_constats(analyse: core.Analysis, livre: dict, pages: dict) -> str:
-    # Le constat « à relancer » a son propre bloc : le répéter ferait lire deux
-    # fois la même phrase.
-    constats = ([i for i in analyse.insights if i.cle != "attention"]
-                if livre["a_relancer"]["n"] else analyse.insights)
+    constats = analyse.insights
     if not constats:
         return ""
     lignes = []
@@ -1075,9 +1039,9 @@ def _marge_entonnoir(resume: dict) -> str:
     gagnes = next((e for e in etapes if e["cle"] == "gagnes"), None)
     milieu = None
     if remis and gagnes and remis["n"]:
-        milieu = (f'Sur {core.fmt_int(remis["n"])} dossiers remis, '
+        milieu = (f'Sur {core.fmt_int(remis["n"])} dossiers en Step 1, '
                   f'{core.fmt_int(gagnes["n"])} ont abouti à un mandat : '
-                  f'{core.fmt_pct(gagnes["n"] / remis["n"], 0)} des remis.')
+                  f'{core.fmt_pct(gagnes["n"] / remis["n"], 0)} des Step 1.')
     return _marge(
         "Lecture",
         "Chaque barre est une étape franchie ; le pourcentage à gauche est la part de "
@@ -1109,8 +1073,11 @@ def _marge_annees() -> str:
 def _marge_classes() -> str:
     return _marge(
         "Lecture",
-        "Ce que chaque classe d’actifs reçoit, remporte et porte d’encours. L’encours "
-        "remporté le plus haut d’abord ; un clic sur un en-tête trie autrement.",
+        "Ce que chaque classe d’actifs pèse dans l’activité, ce qu’elle reçoit, remporte, "
+        "perd et coûte en délai. L’encours remporté le plus haut d’abord ; un clic sur un "
+        "en-tête trie autrement.",
+        "<b>Part</b> est le poids de la classe dans les questionnaires reçus : à comparer à "
+        "son encours remporté, pour voir si elle rend plus que son volume.",
         "Le détail par classe — taux de succès, encours, intervalles — est dans « Appels "
         "d’offres » et « Encours & gains ».")
 
@@ -1132,8 +1099,6 @@ def _vue_ensemble_html(analyse: core.Analysis, pages: dict, indice: int) -> tupl
     morceaux.append(_bloc_ouverts(livre))
     morceaux.append(_bloc_carnet(livre, resume))
     morceaux.append(_bloc_indicateurs(analyse))
-    if livre["a_relancer"]["n"]:
-        morceaux.append(_bloc_relances(livre))
     bloc, indice = _bloc_figure(analyse, "entonnoir",
                                 "Le chemin des appels d’offres", _marge_entonnoir(resume), indice)
     morceaux.append(bloc)

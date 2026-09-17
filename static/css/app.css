@@ -448,7 +448,11 @@ table.donnees th {
   text-transform: uppercase; color: var(--b-72); padding: 8px 12px 8px 0;
   border-bottom: 1px solid var(--b-22); white-space: nowrap; background: var(--blanc);
 }
-table.donnees th.num, table.donnees td.num { text-align: right; padding-right: 0; }
+/* Gouttière à gauche, comme dans le rapport : deux colonnes de chiffres
+   alignées à droite se toucheraient sinon dès que le tableau est dense. */
+table.donnees th.num, table.donnees td.num {
+  text-align: right; padding-right: 0; padding-left: 16px;
+}
 table.donnees td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--b-12);
   color: var(--ink); vertical-align: baseline; }
 table.donnees td.attenue { color: var(--b-72); }
