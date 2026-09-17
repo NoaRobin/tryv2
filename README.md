@@ -1,6 +1,6 @@
 # RFP & Due Diligence
 
-Application interne de pilotage des appels d’offres et de la due diligence, pour
+Application interne de pilotage des appels d’offres et de la due diligence.
 
 Elle répond en un écran à la question de la semaine — *quels appels d’offres
 sont ouverts, pour quel encours, et qu’avons-nous gagné ou perdu ?* — puis
