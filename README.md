@@ -1,7 +1,6 @@
 # RFP & Due Diligence
 
 Application interne de pilotage des appels d’offres et de la due diligence, pour
-Rothschild & Co Asset Management.
 
 Elle répond en un écran à la question du matin — *où en sont les appels
 d’offres ?* — puis laisse descendre, page après page, jusqu’au dossier
