@@ -427,6 +427,7 @@ a.carnet__col:hover .carnet__n { border-bottom: 1px solid var(--ink); }
 .identite__g { color: var(--b-72); }
 .identite__v { color: var(--ink); }
 .identite__v b { font-family: var(--police-serif); font-size: 17px; font-weight: 400; }
+.identite__n { display: block; margin-top: 3px; color: var(--b-72); }
 
 /* -------------------------------------------------------------- listes --- */
 .onglets { display: flex; gap: 2px; border-bottom: 1px solid var(--b-12); margin-bottom: 4px;
@@ -457,6 +458,13 @@ table.donnees tbody tr:last-child td { border-bottom: 0; }
 table.donnees caption { caption-side: bottom; text-align: left; font-size: 12px;
   color: var(--b-72); padding-top: 8px; }
 .tableau { overflow-x: auto; }
+/* Un en-tête triable est un bouton : il le dit au survol et au clavier, et
+   porte le sens du tri en toutes lettres pour le lecteur d’écran. */
+table.triable th[role="button"] { cursor: pointer; user-select: none; }
+table.triable th[role="button"]:hover { color: var(--ink); }
+table.triable th[aria-sort] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--ink); }
+table.triable th[aria-sort="ascending"]::after { content: " ↑"; }
+table.triable th[aria-sort="descending"]::after { content: " ↓"; }
 .cellule-nom { font-weight: 500; }
 .cellule-sous { display: block; font-size: 12px; color: var(--b-72); margin-top: 1px; }
 

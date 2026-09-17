@@ -4,7 +4,7 @@
 // son tableau jumeau. Un clic sur une catégorie filtre tout le périmètre.
 
 import { h, vider, lien, entier, pluriel } from '../ui.js';
-import { rendreQuandVisible, detruireFigure, tableau as tableauHTML } from '../figures.js';
+import { rendreQuandVisible, detruireFigure, tableau as tableauHTML, activerTri } from '../figures.js';
 
 const MARGES = {
   activite: ['Lecture',
@@ -15,7 +15,7 @@ const MARGES = {
     'Les clients tranchent plusieurs mois après l’envoi : sur une période récente, le taux de succès est mécaniquement sous-évalué.'],
   dd: ['Lecture',
     'Une due diligence se traite, elle ne se gagne pas : elle n’a pas de résultat commercial.',
-    'Le détail RFI / DDQ est une lecture d’écran. Le rapport diffusé s’en tient aux deux familles.'],
+    'Le classeur ne connaît que deux types : appel d’offres et due diligence. Le rapport diffusé dit la même chose que cet écran.'],
   aum: ['Lecture',
     'L’encours remporté est rattaché à l’année de <b>réception</b> du dossier, pas à celle de la décision.',
     'La collecte issue des appels d’offres est très irrégulière : un mandat peut peser plus qu’une année ordinaire.'],
@@ -126,7 +126,8 @@ function uneAnalyse(b, ctx) {
     }
   } else {
     // Le bloc EST un tableau : certaines réponses se lisent ligne à ligne.
-    corps.innerHTML = tableauHTML(b.tableau, { max: 200 });
+    corps.innerHTML = tableauHTML(b.tableau, { max: 200, triable: b.triable });
+    if (b.triable) activerTri(corps);
   }
   el.append(corps);
   if (b.note) el.append(h('p.analyse__note', { texte: b.note }));

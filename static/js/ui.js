@@ -141,9 +141,11 @@ export function identites(liste) {
   if (!liste || !liste.length) return null;
   const bloc = h('div.identites');
   for (const i of liste) {
+    // La réserve de lecture s'écrit sous l'égalité, comme dans le rapport.
     bloc.append(h('div.identite', {},
       h('span.identite__g', { texte: i.grandeur }),
-      h('span.identite__v', {}, h('b', { texte: i.valeur }), ' = ', i.egalite)));
+      h('span.identite__v', {}, h('b', { texte: i.valeur }), ' = ', i.egalite, '.',
+        i.note ? h('span.identite__n', { texte: i.note }) : null)));
   }
   return bloc;
 }

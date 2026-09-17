@@ -65,7 +65,7 @@ fichier de suivi, et voici comment chacun est lu :
 | `Client`, `Segment`, `Type de client`, `Country` | qui demande — Instit. / Distr. / Intern. deviennent Institutionnel / Distributeur / International |
 | `Consultant` | cabinet intermédiaire ; « None » = en direct |
 | `Writer`, `Reviewer` | rédacteur et relecteur |
-| `Type` | RFP ou Due Diligence : la famille du dossier |
+| `Type` | RFP ou Due Diligence : la famille du dossier. Il n’existe pas de type plus fin ; un intitulé ancien (« questionnaire », « DDQ », « RFI ») est compris à la lecture et rattaché à la due diligence |
 | `Volume` | **l’encours en jeu, en M€**. C’est la grandeur centrale : elle est sommée par état (ouvert, gagné, perdu), par segment, par étape |
 | `Number` | vaut 1 ; ignoré, on compte les lignes |
 | `Step_1`, `Step_2`, `ORAL_RFP` | trois étapes binaires : dossier remis, présélection, soutenance orale. Elles forment le chemin des appels d’offres |
@@ -111,11 +111,14 @@ cibles par type, seuil ESG, horizons de croissance.
 | `export.py` | Le rapport HTML autonome | plotly |
 | `assets/` | Inter et EB Garamond (SIL OFL) ; emplacement du logo officiel | — |
 
-`core.py` n’importe ni Streamlit, ni FastAPI : il se teste et se réutilise seul
-(notebook, script, tâche planifiée). Il produit un objet `Analysis` — indicateurs,
-blocs d’analyse, constats — que le serveur et le rapport consomment **à
-l’identique**. Un chiffre affiché à l’écran est le même que dans le rapport, par
-construction.
+`core.py` n’importe pas FastAPI : il se teste et se réutilise seul (notebook,
+script, tâche planifiée). Il produit un objet `Analysis` — indicateurs, blocs
+d’analyse, constats — que le serveur et le rapport consomment **à l’identique**,
+et il calcule lui-même la charge utile de la vue d’ensemble (`carnet_detaille`,
+`resume_situation`) que l’un sert par HTTP et que l’autre imprime. Un chiffre
+affiché à l’écran est le même que dans le rapport, par construction ; les
+constantes que l’écran doit connaître (ordre des indicateurs, seuil de relance,
+longueur des listes) lui sont transmises par `/api/meta`, jamais recopiées.
 
 **Couche métrique.** Chaque indicateur est défini une fois, dans une fonction
 documentée (`carnet`, `taux_succes_rfp`, `aum_gagne`, `cadence_mensuelle`,
@@ -146,8 +149,15 @@ encours d’abord), le carnet des cinq états avec ses identités arithmétiques
 les indicateurs (succès, encours remporté, perdu, en jeu, présélection, oral,
 délais), les dossiers à relancer, le chemin des appels d’offres (reçus → remis →
 présélectionnés → soutenus → remportés, effectifs et encours à chaque marche),
-ce qui a changé, les listes nommées des gagnés et perdus, la décomposition de
-l’activité et les huit derniers trimestres.
+ce qui a changé, les listes nommées des gagnés et perdus, **l’année par année**
+(une ligne par exercice du périmètre : reçus, tranchés, taux de succès, encours,
+délai — triable d’un clic sur l’en-tête), **les classes d’actifs** (ce que
+chacune reçoit, remporte et porte d’encours, triable de même), la décomposition
+de l’activité et les huit derniers trimestres.
+
+La barre de périmètre propose les douze, vingt-quatre et trente-six derniers
+mois, **chaque exercice présent dans les données**, et tout l’historique. Le
+rapport est produit sur le périmètre affiché.
 
 **Analyses** — six questions, une à la fois : Activité, Appels d’offres, Due
 diligence, Encours & gains, ESG, Diagnostic. La page Appels d’offres ouvre sur
@@ -164,7 +174,7 @@ colonnes, la qualité de la lecture.
 
 **Le champ de commande** (`Ctrl K`, `⌘ K` sur Mac, ou `/`) comprend le
 vocabulaire des données : « Suisse 2025 », « gagnés obligataire », « Bellecour »,
-« à relancer », « janvier 2026 ». Ce qu’il a compris est **écrit en toutes
+« à relancer », « janvier 2026 », « 2019 ». Ce qu’il a compris est **écrit en toutes
 lettres avant d’agir** — aucune phrase n’est produite par un modèle de langage,
 c’est un rapprochement de vocabulaire, et il se lit.
 
@@ -172,8 +182,9 @@ c’est un rapprochement de vocabulaire, et il se lit.
 
 ## Définitions qui engagent
 
-- **Famille** — RFP d’un côté, toute la due diligence de l’autre. Le type fin
-  (RFP / RFI / DDQ) reste disponible en filtre et à l’écran.
+- **Famille** — RFP d’un côté, toute la due diligence de l’autre : les deux
+  valeurs de la colonne `Type` du classeur. Il n’existe pas de type plus fin,
+  ni à l’écran, ni dans le rapport.
 - **Résultat** — n’existe **que** pour un appel d’offres. Une due diligence ne se
   gagne pas : son résultat est « sans objet », pas « perdu ».
 - **Carnet** — les cinq états d’un appel d’offres. « En rédaction » et « en
@@ -191,7 +202,11 @@ c’est un rapprochement de vocabulaire, et il se lit.
   en attente compte dans les étapes qu’il a franchies, jamais dans les
   remportés. Le taux de passage se lit d’une marche à la suivante.
 - **Délai de traitement** — jours **calendaires** entre réception et envoi, comme
-  au comité. Le respect du délai cible se mesure, lui, en jours ouvrés.
+  au comité, dans les indicateurs comme dans les tableaux par dimension. Le
+  respect du délai cible se mesure, lui, en jours ouvrés, et les modèles du
+  diagnostic le disent quand ils raisonnent en jours ouvrés.
+- **Relance** — un appel d’offres remis sans décision depuis plus de quatre mois
+  (`JOURS_RELANCE`), ou un dossier en cours au-delà de son délai cible.
 - **Cadence** — dossiers **terminés** par mois : la capacité de production de
   l’équipe, à distinguer de la charge qui lui arrive.
 - **Croissance sur N ans** — dernière année civile **complète** contre celle d’il
@@ -253,9 +268,16 @@ analyses interactives, leurs tableaux et une annexe méthodologique. Plotly et
 les polices y sont embarqués : il s’ouvre d’un double-clic, sans Python, sans
 serveur, sans réseau.
 
-C’est le document **diffusé** : il parle le vocabulaire du comité — deux
-familles, pas de types fins. Le détail RFI / DDQ reste à l’écran ; techniquement,
-un `Block` ou un `Kpi` porte un drapeau `hors_rapport` et `export.py` l’écarte.
+C’est le document **diffusé**, et il dit exactement ce que dit l’application :
+sa page « Vue d’ensemble » est l’écran Situation, bloc pour bloc — même phrase
+d’ouverture, même tableau des appels d’offres ouverts, même carnet, mêmes
+indicateurs dans le même ordre, mêmes relances, même chemin, mêmes listes,
+même année par année, mêmes classes d’actifs. Les pages suivantes sont les
+écrans d’analyse. Rien n’est réservé à l’écran, rien n’est réservé au document :
+`python core.py` le vérifie. Le rapport suit le périmètre choisi dans
+l’application — chaque exercice s’y ouvre un par un — et ses tableaux « Année
+par année » et « Classes d’actifs » se trient d’un clic sur l’en-tête, comme à
+l’écran. Il se lit sur ordinateur : aucune mise en page mobile.
 
 ---
 

@@ -143,8 +143,7 @@ export async function ouvrirFiche(identifiant, ctx) {
 
   const tete = h('div.fiche__tete');
   tete.append(h('div', {},
-    h('div.cle', { texte: [d.famille, d.type_demande !== d.famille ? d.type_demande : null]
-      .filter(Boolean).join(' · ') }),
+    h('div.cle', { texte: d.famille }),
     h('h2.fiche__nom', { texte: d.client || 'Client non renseigné' })));
   tete.append(h('button.fiche__x', { type: 'button', 'aria-label': 'Fermer', onclick: fermer, texte: '×' }));
   panneau.append(tete);
@@ -187,7 +186,7 @@ export async function ouvrirFiche(identifiant, ctx) {
       texte: `Les autres dossiers de ce client — ${entier(d.n_dossiers_client - 1)}` }));
     corps.append(tableDossiers(d.autres_dossiers_client, [
       { titre: 'Reçu', rendu: (l) => fmtDate(l.date_reception) },
-      { titre: 'Type', attenue: true, cle: 'type_demande' },
+      { titre: 'Type', attenue: true, cle: 'famille' },
       { titre: 'Classe d’actifs', attenue: true, rendu: (l) => l.classe_actifs || '—' },
       { titre: 'Résultat', num: true,
         rendu: (l) => (l.resultat === 'Sans objet'

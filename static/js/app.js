@@ -244,7 +244,6 @@ async function rafraichir(options = {}) {
     peindrePerimetre();
     try {
       const p = Etat.paramsAPI(App.etat);
-      p.set('lignes', '7');
       App.analyse = await api.get('/api/analyse', p);
       App.signature = signature;
     } catch (e) {

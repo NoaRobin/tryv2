@@ -86,7 +86,8 @@ class Etat:
                 return self._cache[cle]
         sel = core.filter_data(self.df, filtres)
         prec = core.filter_data(self.df, filtres.periode_precedente())
-        analyse = core.build_analysis(sel, filtres, self.rapport, prec, options=options)
+        analyse = core.build_analysis(sel, filtres, self.rapport, prec, options=options,
+                                      df_total=self.df)
         with self._verrou:
             self._cache[cle] = analyse
             while len(self._cache) > 24:
@@ -106,33 +107,12 @@ def _exiger_donnees() -> None:
 # =============================================================================
 #  SÉRIALISATION — JSON propre : NaN → null, dates → ISO, numpy → Python
 # =============================================================================
-def _propre(v: Any) -> Any:
-    if v is None or v is pd.NA or v is pd.NaT:
-        return None
-    if isinstance(v, (bool, np.bool_)):
-        return bool(v)
-    if isinstance(v, (int, np.integer)):
-        return int(v)
-    if isinstance(v, (float, np.floating)):
-        return float(v) if math.isfinite(float(v)) else None
-    if isinstance(v, (pd.Timestamp, dt.datetime)):
-        return v.strftime("%Y-%m-%d")
-    if isinstance(v, dt.date):
-        return v.isoformat()
-    if isinstance(v, (list, tuple)):
-        return [_propre(x) for x in v]
-    if isinstance(v, dict):
-        return {str(k): _propre(x) for k, x in v.items()}
-    if isinstance(v, np.ndarray):
-        return [_propre(x) for x in v.tolist()]
-    if isinstance(v, str):
-        return v
-    try:
-        if pd.isna(v):
-            return None
-    except (TypeError, ValueError):
-        pass
-    return str(v)
+# La sérialisation, les colonnes de dossier et le carnet détaillé vivent dans
+# core.py : l’écran et le rapport HTML consomment le même calcul.
+_propre = core.valeur_json
+_dossiers = core.dossiers_json
+COLONNES_DOSSIER = core.COLONNES_DOSSIER
+LIBELLES_DOSSIER = core.LIBELLES_DOSSIER
 
 
 def _tableau(tableau: pd.DataFrame) -> dict[str, Any]:
@@ -147,48 +127,6 @@ def _figure(bloc: core.Block) -> dict[str, Any] | None:
     if bloc.figure is None:
         return None
     return json.loads(bloc.figure.to_json())
-
-
-COLONNES_DOSSIER = [
-    "numero", "date_reception", "date_envoi", "famille", "type_demande", "statut", "resultat",
-    "client", "segment", "type_client", "pays", "consultant", "commercial", "analyste",
-    "relecteur", "fonds", "classe_actifs", "sous_classe_actifs", "forme_juridique", "expertise",
-    "langue", "montant_potentiel", "a_remis", "a_preselection", "a_oral", "soutenance", "sri",
-    "qvidian", "nb_questions", "part_esg", "bande_esg", "delai_calendaire", "delai_ouvre",
-    "sla_cible", "dans_sla", "anciennete_ouvree", "en_retard", "aum_gagne",
-]
-LIBELLES_DOSSIER = {
-    "date_reception": "Réception", "date_envoi": "Envoi", "famille": "Famille",
-    "type_demande": "Type", "statut": "Statut", "resultat": "Résultat", "client": "Client",
-    "consultant": "Consultant", "type_client": "Type de client", "pays": "Pays",
-    "fonds": "Fonds de référence", "classe_actifs": "Classe d’actifs",
-    "sous_classe_actifs": "Sous-classe", "forme_juridique": "Forme juridique",
-    "expertise": "Expertise", "analyste": "Analyste", "langue": "Langue",
-    "nb_questions": "Questions", "part_esg": "Part ESG", "bande_esg": "Tranche ESG",
-    "montant_potentiel": "Encours (M€)", "delai_calendaire": "Délai (j)",
-    "delai_ouvre": "Délai (j ouvrés)", "sla_cible": "Délai cible (j ouvrés)",
-    "dans_sla": "Dans le délai cible", "anciennete_ouvree": "Ancienneté (j ouvrés)",
-    "en_retard": "En retard", "aum_gagne": "Encours remporté (M€)",
-    "jours_attente": "Jours d’attente", "jours_chez_nous": "Jours chez nous",
-    "numero": "Numéro", "segment": "Segment", "commercial": "Commercial", "relecteur": "Relecteur",
-    "a_remis": "Dossier remis", "a_preselection": "Présélection", "a_oral": "Soutenance orale",
-    "soutenance": "Soutenance orale", "sri": "ISR", "qvidian": "Mise à jour Qvidian",
-}
-
-
-def _dossiers(table: pd.DataFrame, colonnes: list[str] | None = None) -> list[dict[str, Any]]:
-    """Lignes de dossiers sérialisées, l’identifiant étant l’index de la table
-    enrichie (stable tant que la source ne change pas)."""
-    if table.empty:
-        return []
-    cols = [c for c in (colonnes or COLONNES_DOSSIER) if c in table.columns]
-    sortie = []
-    for idx, ligne in zip(table.index, table[cols].itertuples(index=False, name=None)):
-        d = {"id": int(idx)}
-        for c, v in zip(cols, ligne):
-            d[c] = _propre(v)
-        sortie.append(d)
-    return sortie
 
 
 # =============================================================================
@@ -206,13 +144,15 @@ def _periodes_disponibles() -> list[dict[str, str]]:
     if ETAT.df.empty:
         return []
     d_min, d_max = _bornes_donnees()
-    # Trois exercices dans la barre : au-delà, la barre déborde sur deux lignes
-    # et le champ de commande sait lire « 2021 » comme n’importe quelle année.
-    annees = list(range(d_max.year, max(d_min.year, d_max.year - 2) - 1, -1))
+    # Chaque exercice présent dans les données se choisit d’un clic : la
+    # période voulue, année par année. Les trois derniers sont nommés en
+    # toutes lettres, les plus anciens par leur seul millésime.
+    annees = list(range(d_max.year, d_min.year - 1, -1))
     return ([{"cle": "12m", "libelle": "12 derniers mois"},
              {"cle": "24m", "libelle": "24 derniers mois"},
              {"cle": "36m", "libelle": "36 derniers mois"}]
-            + [{"cle": str(a), "libelle": f"Exercice {a}"} for a in annees]
+            + [{"cle": str(a), "libelle": f"Exercice {a}" if i < 3 else str(a)}
+               for i, a in enumerate(annees)]
             + [{"cle": "tout", "libelle": "Tout l’historique"}])
 
 
@@ -305,7 +245,12 @@ def meta() -> JSONResponse:
         "granularites": core.GRANULARITES,
         "libelles_dossier": LIBELLES_DOSSIER,
         "note_censure": core.NOTE_CENSURE,
-        "sla": core.sla_libelle(par_famille=True),
+        "sla": core.sla_libelle(),
+        # Les constantes que l’écran doit connaître viennent du moteur, jamais
+        # d’une seconde copie en JavaScript.
+        "choix_kpi_situation": list(core.CHOIX_KPI_SITUATION),
+        "jours_relance": core.JOURS_RELANCE,
+        "lignes_compartiment": core.LIGNES_COMPARTIMENT,
         "aujourdhui": dt.date.today().isoformat(),
         "version": ETAT.version,
     }))
@@ -314,60 +259,13 @@ def meta() -> JSONResponse:
 # =============================================================================
 #  ROUTES — analyse
 # =============================================================================
-def _carnet(sel: pd.DataFrame, n_lignes: int) -> dict[str, Any]:
-    livre = core.carnet(sel)
-    colonnes = ["client", "segment", "consultant", "commercial", "pays", "classe_actifs",
-                "sous_classe_actifs", "fonds", "expertise", "analyste", "statut", "resultat",
-                "montant_potentiel", "date_reception", "date_envoi", "jours_attente",
-                "jours_chez_nous", "anciennete_ouvree", "en_retard", "sla_cible",
-                "a_remis", "a_preselection", "a_oral"]
-    compartiments = {}
-    for cle, libelle, sens in core.COMPARTIMENTS:
-        sous = livre.compartiments[cle]
-        compartiments[cle] = {
-            "libelle": libelle, "sens": sens, "n": livre.n(cle),
-            "encours": livre.encours(cle),
-            "dossiers": _dossiers(sous.head(n_lignes), colonnes),
-        }
-    relances = livre.a_relancer.copy()
-    for d in (_dossiers(relances.head(n_lignes), colonnes)):
-        pass
-    ouverts = pd.concat([livre.compartiments["en_cours"], livre.compartiments["en_attente"]])
-    if len(ouverts):
-        ouverts = ouverts.sort_values("montant_potentiel", ascending=False, na_position="last")
-    return {
-        "total": livre.total, "vivants": livre.vivants,
-        "ouverts": {
-            "n": int(len(ouverts)),
-            "encours": float(ouverts["montant_potentiel"].sum(skipna=True)) if len(ouverts) else 0.0,
-            "dossiers": _dossiers(ouverts, colonnes),
-        },
-        "compartiments": compartiments,
-        "a_relancer": {
-            "n": len(relances),
-            "encours": float(relances["montant_potentiel"].sum(skipna=True)) if len(relances) else 0.0,
-            "dossiers": _dossiers(relances.head(n_lignes), colonnes),
-        },
-    }
-
-
 def _repere_historique() -> dict[str, Any]:
     """Les mêmes grandeurs sur TOUT l’historique : ce à quoi se compare le
     périmètre courant. Calculé une fois par version de la source."""
     global _REPERE
     if _REPERE.get("version") == ETAT.version:
         return _REPERE["valeurs"]
-    df = ETAT.df
-    taux, gagnes, tranches, _ = core.taux_succes_rfp(df)
-    valeurs = {
-        "questionnaires": int(len(df)),
-        "rfp": core.nb_famille(df, core.FAMILLE_RFP),
-        "dd": core.nb_famille(df, core.FAMILLE_DD),
-        "taux_succes": taux, "gagnes": gagnes, "tranches": tranches,
-        "encours_remporte": core.aum_gagne(df),
-        "annee_min": int(df["date_reception"].min().year) if len(df) else None,
-        "annee_max": int(df["date_reception"].max().year) if len(df) else None,
-    }
+    valeurs = core.repere_historique(ETAT.df)
     _REPERE = {"version": ETAT.version, "valeurs": valeurs}
     return valeurs
 
@@ -381,7 +279,7 @@ def analyse(request: Request,
             esg_mode: str = Query(default="part"),
             sections: str | None = Query(default=None),
             figures: int = Query(default=1),
-            lignes: int = Query(default=8, ge=1, le=200)) -> JSONResponse:
+            lignes: int = Query(default=core.LIGNES_COMPARTIMENT, ge=1, le=200)) -> JSONResponse:
     _exiger_donnees()
     filtres, cle_periode = _filtres_depuis(request)
     gran = granularite if granularite in core.GRANULARITES else _granularite_defaut(filtres)
@@ -397,13 +295,12 @@ def analyse(request: Request,
         blocs.append({
             "cle": b.cle, "section": b.section, "titre": b.titre, "accroche": b.accroche,
             "note": b.note, "large": b.large, "dimension": b.dimension,
-            "hors_rapport": b.hors_rapport,
+            "triable": b.triable,
             "figure": _figure(b) if figures else None,
             "tableau": _tableau(b.tableau),
         })
 
     precedente = filtres.periode_precedente()
-    taux, gagnes, tranches, ic = core.taux_succes_rfp(sel)
     sortie = {
         "filtres": {"periode": cle_periode, "date_min": filtres.date_min, "date_max": filtres.date_max,
                     "dims": filtres.dims, "description": filtres.describe(), "actif": filtres.actif},
@@ -414,31 +311,8 @@ def analyse(request: Request,
         "vide": a.vide,
         "kpis": [asdict(k) for k in a.kpis],
         "insights": [asdict(i) for i in a.insights],
-        "carnet": _carnet(sel, lignes) if not a.vide else None,
-        "resume": {
-            "questionnaires": int(len(sel)),
-            "dd": core.nb_famille(sel, core.FAMILLE_DD),
-            "rfp": core.nb_famille(sel, core.FAMILLE_RFP),
-            "taux_succes": taux, "gagnes": gagnes, "tranches": tranches, "ic": list(ic),
-            "encours_remporte": core.aum_gagne(sel), "encours_en_jeu": core.aum_en_jeu(sel),
-            "encours_perdu": core.aum_perdu(sel),
-            "entonnoir": core.entonnoir(sel),
-            "delai_dd": core.delai_median(sel, core.FAMILLE_DD),
-            "delai_rfp": core.delai_median(sel, core.FAMILLE_RFP),
-            "mix_types": {str(k): int(v) for k, v in core.repartition_type(sel).items()},
-            "date_min_donnees": sel["date_reception"].min() if len(sel) else None,
-            "date_max_donnees": sel["date_reception"].max() if len(sel) else None,
-            # Tout ce que l’écran affiche est calculé ici : il ne déduit ni
-            # série, ni facteur d’échelle, ni identité par soustraction.
-            "identites": core.identites_carnet(sel),
-            "echelle": core.echelle_decomposition(sel),
-            "series": {
-                "questionnaires": core.serie_mensuelle(sel, None, 12),
-                "rfp": core.serie_mensuelle(sel, sel["est_rfp"], 12),
-                "dd": core.serie_mensuelle(sel, sel["est_dd"], 12),
-            },
-            "repere": _repere_historique(),
-        } if not a.vide else None,
+        "carnet": core.carnet_detaille(sel, lignes) if not a.vide else None,
+        "resume": core.resume_situation(sel, repere=_repere_historique()) if not a.vide else None,
         "sections": [{"cle": c, "libelle": l} for c, l in a.sections],
         "blocs": blocs,
         "erreurs": a.erreurs,

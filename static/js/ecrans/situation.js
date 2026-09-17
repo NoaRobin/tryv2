@@ -6,10 +6,10 @@
 
 import { h, vider, nombre, faits, carnet, identites, tableDossiers, cellulesNom, jauge,
   lien, entier, euros, pluriel, fmtDate, dateCourte } from '../ui.js';
-import { rendreQuandVisible, tableau as tableauHTML } from '../figures.js';
+import { rendreQuandVisible, tableau as tableauHTML, activerTri } from '../figures.js';
 import { NBSP } from '../format.js';
 
-const SEUIL_RELANCE = 120;   // jours : au-delà, une décision qui tarde devient une relance
+// Le seuil de relance et l'ordre des indicateurs viennent du moteur (/api/meta).
 
 /**
  * @param {object} ctx — { analyse, meta, etat, tonsEtat, aller(ecran), filtrer(dim, valeur),
@@ -41,6 +41,8 @@ export function rendreSituation(ctx) {
   ecran.append(blocFigure(ctx, 'entonnoir', 'Le chemin des appels d’offres', margeEntonnoir(ctx)));
   ecran.append(blocConstats(ctx));
   ecran.append(blocListes(ctx));
+  ecran.append(blocFigure(ctx, 'annees', 'Année par année', margeAnnees()));
+  ecran.append(blocFigure(ctx, 'classes_actifs', 'Les classes d’actifs', margeClasses()));
   ecran.append(blocFigure(ctx, 'decomposition', 'La décomposition de l’activité', margeDecomposition(ctx)));
   ecran.append(blocFigure(ctx, 'trimestre', 'Les huit derniers trimestres', margeTrimestres(ctx)));
   return ecran;
@@ -207,6 +209,7 @@ function blocOuverts(ctx) {
       h('p.prose', { texte: 'Aucun appel d’offres n’est ouvert sur ce périmètre.' }),
     ], margeTexte('Lecture', 'Un appel d’offres est ouvert tant qu’il est en rédaction chez nous ou remis au client sans décision.'));
   }
+  const SEUIL_RELANCE = ctx.meta.jours_relance;
   const maxi = Math.max(...o.dossiers.map(d => (d.statut === 'En cours' ? d.jours_chez_nous : d.jours_attente) || 0), 1);
   const table = tableDossiers(o.dossiers, [
     { titre: 'Client', rendu: (d) => cellulesNom(d, ['segment', 'pays']) },
@@ -275,8 +278,7 @@ function blocCarnet(ctx) {
 /* ------------------------------------------------------- indicateurs ----- */
 function blocIndicateurs(ctx) {
   const { analyse, aller } = ctx;
-  const ordre = ['succes', 'aum', 'aum_perdu', 'pipeline', 'oral', 'preselection',
-    'delai_rfp', 'sla', 'delai_dd', 'esg'];
+  const ordre = ctx.meta.choix_kpi_situation || [];
   const choisis = ordre.map(c => analyse.kpis.find(k => k.cle === c)).filter(Boolean);
   if (!choisis.length) return null;
   return bloc('indicateurs', 'Les indicateurs', [
@@ -289,7 +291,9 @@ function blocIndicateurs(ctx) {
 function blocRelances(ctx) {
   const { analyse } = ctx;
   const liste = analyse.carnet.a_relancer;
-  const maxi = Math.max(...liste.dossiers.map(d => Math.max(d.jours_attente || 0, d.anciennete_ouvree || 0)), 1);
+  const SEUIL_RELANCE = ctx.meta.jours_relance;
+  // Une seule horloge, calendaire, comme la colonne « Depuis » des ouverts.
+  const maxi = Math.max(...liste.dossiers.map(d => Math.max(d.jours_attente || 0, d.jours_chez_nous || 0)), 1);
 
   const intro = h('p.prose', { texte:
     `${pluriel(liste.n, 'dossier')} ${liste.n > 1 ? 'demandent' : 'demande'} une relance : délai cible dépassé, `
@@ -300,7 +304,7 @@ function blocRelances(ctx) {
     { titre: 'Dossier', rendu: (d) => cellulesNom(d, ['segment', 'pays']) },
     { titre: 'Motif', attenue: true, rendu: (d) => d.en_retard ? 'délai cible dépassé' : 'sans réponse du client' },
     { titre: 'Attente', rendu: (d) => {
-      const v = d.en_retard ? d.anciennete_ouvree : d.jours_attente;
+      const v = d.en_retard ? d.jours_chez_nous : d.jours_attente;
       return h('span', { style: { display: 'flex', gap: '10px', alignItems: 'center' } },
         jauge(v, maxi, { seuil: SEUIL_RELANCE }), h('span.num', { texte: `${entier(v)}${NBSP}j` }));
     } },
@@ -311,8 +315,8 @@ function blocRelances(ctx) {
     lien(`Ouvrir ${liste.n > 1 ? `les ${entier(liste.n)} dossiers` : 'le dossier'}`, () => ctx.listeCompartiment('a_relancer')));
 
   return bloc('relances', 'Ce qu’il faut relancer', [intro, table, pied], margeTexte('Repères',
-    `<b>Attente</b> compte les jours depuis la remise de la réponse au client ; <b>délai cible dépassé</b> compte les jours ouvrés depuis la réception, de notre côté.`,
-    `Le seuil de relance est de quatre mois d’attente d’une décision. Le délai cible est paramétré par type de demande : ${ctx.meta.sla}.`));
+    `<b>Attente</b> compte les jours depuis la remise de la réponse au client ; pour un <b>délai cible dépassé</b>, depuis la réception, de notre côté. Le délai cible, lui, se juge en jours ouvrés.`,
+    `Le seuil de relance est de quatre mois d’attente d’une décision. Le délai cible est paramétré par famille : ${ctx.meta.sla}.`));
 }
 
 /* --------------------------------------------------------- constats ----- */
@@ -360,9 +364,22 @@ function blocFigure(ctx, cleBloc, titre, marge) {
       surClic: b.dimension ? (dim, valeur) => ctx.filtrer(dim, valeur) : null,
     }));
   } else if (b.tableau) {
-    hote.innerHTML = tableauHTML(b.tableau);
+    hote.innerHTML = tableauHTML(b.tableau, { triable: b.triable });
+    if (b.triable) activerTri(hote);
   }
   return el;
+}
+
+function margeAnnees() {
+  return margeTexte('Lecture',
+    'Une ligne par exercice du périmètre choisi, lue comme la vue d’ensemble : reçus, tranchés, encours. Un clic sur un en-tête trie le tableau sur cette colonne ; un second clic inverse l’ordre.',
+    'Les puces de période, en haut, ouvrent chaque exercice un par un ; le rapport suit le périmètre affiché.');
+}
+
+function margeClasses() {
+  return margeTexte('Lecture',
+    'Ce que chaque classe d’actifs reçoit, remporte et porte d’encours. L’encours remporté le plus haut d’abord ; un clic sur un en-tête trie autrement.',
+    'Un clic sur une classe, dans les analyses, recalcule tout le périmètre sur elle.');
 }
 
 function margeEntonnoir(ctx) {
@@ -380,14 +397,13 @@ function margeEntonnoir(ctx) {
 function margeDecomposition(ctx) {
   const e = ctx.analyse.resume.echelle;
   return margeTexte('Lecture',
-    'La branche « due diligence » n’a pas de suite : une due diligence se traite, elle ne se gagne pas.',
-    e ? `Les cinq états d’un appel d’offres sont exclusifs et couvrent son total. Facteur d’échelle <b>${e.affichage}</b> : ${e.phrase}.` : null,
-    'La barre sous chaque nombre est sa part du total reçu.');
+    'D’où viennent les dossiers, et où en sont les appels d’offres : chaque état est exclusif, leur somme fait le total.',
+    e ? `Facteur d’échelle <b>${e.affichage}</b> : ${e.phrase}.` : null);
 }
 
 function margeTrimestres() {
   return margeTexte('Lecture',
-    'Quatre mouvements, et seulement ceux qu’on sait dater : ce qui arrive, ce qui part, ce que cela rapporte. Une décision client n’a pas de date dans la base : elle ne figure pas ici.',
+    'Les mouvements qu’on sait dater, trimestre par trimestre : ce qui arrive, ce qui part, ce que cela rapporte.',
     'Le trimestre en cours est atténué : il est incomplet, il ne se compare pas.');
 }
 
@@ -431,6 +447,6 @@ function blocListes(ctx) {
   peindre();
 
   return bloc('listes', 'Les dossiers tranchés', [barre, zone], margeTexte('Repères',
-    'Les mandats remportés, les dossiers perdus et ceux restés sans suite, l’encours le plus important d’abord. Chaque ligne ouvre la fiche du dossier.',
+    'Les mandats remportés, les dossiers perdus et ceux restés sans suite, la décision la plus récente d’abord. Chaque ligne ouvre la fiche du dossier.',
     'Les listes montrent les premiers dossiers du compartiment ; « Ouvrir » les affiche tous, avec le filtre déjà posé.'));
 }

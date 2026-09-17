@@ -147,15 +147,63 @@ export function ruban(segments, { hauteur = 8, ecart = 2 } = {}) {
   return `<svg class="ruban" viewBox="0 0 ${largeur} ${hauteur}" preserveAspectRatio="none" height="${hauteur}" width="100%" aria-hidden="true">${morceaux.join('')}</svg>`;
 }
 
-/** Tableau HTML depuis { colonnes, lignes } ; nombres alignés à droite. */
-export function tableau(t, { max = 200, classe = 'tableau' } = {}) {
+/** Tableau HTML depuis { colonnes, lignes } ; nombres alignés à droite.
+ *  `triable` : les en-têtes deviennent des boutons de tri (voir activerTri). */
+export function tableau(t, { max = 200, classe = 'tableau', triable = false } = {}) {
   if (!t || !t.colonnes || !t.colonnes.length) return '';
-  const estNombre = (v) => typeof v === 'number' || (typeof v === 'string' && /^[−\-+]?[\d\s  ]+([,.]\d+)?\s?(%|M€|Md€|j|pt)?$/.test(v.trim()));
-  const th = t.colonnes.map(c => `<th scope="col">${echapper(c)}</th>`).join('');
+  const estNombre = (v) => typeof v === 'number' || v === '—' || (typeof v === 'string' && /^[−\-+]?[\d\s  ]+([,.]\d+)?\s?(%|M€|Md€|j|pt)?$/.test(v.trim()));
+  const th = t.colonnes.map(c => `<th scope="col"${triable ? ' role="button" tabindex="0" title="Trier"' : ''}>${echapper(c)}</th>`).join('');
   const lignes = t.lignes.slice(0, max).map(l =>
     `<tr>${l.map((v, i) => `<td class="${estNombre(v) ? 'num' : ''}${i === 0 ? ' premiere' : ''}">${v === null || v === undefined ? '—' : echapper(v)}</td>`).join('')}</tr>`).join('');
   const reste = t.lignes.length > max ? `<caption class="tableau__reste">${t.lignes.length - max} lignes supplémentaires non affichées</caption>` : '';
-  return `<div class="${classe}"><table>${reste}<thead><tr>${th}</tr></thead><tbody>${lignes}</tbody></table></div>`;
+  // Les tableaux du moteur portent la même feuille que les listes de dossiers.
+  return `<div class="${classe}"><table class="donnees${triable ? ' triable' : ''}">${reste}<thead><tr>${th}</tr></thead><tbody>${lignes}</tbody></table></div>`;
+}
+
+/**
+ * La valeur de tri d'une cellule : un nombre quand le texte en est un
+ * (« 1 384 », « 5,6 Md€ » → 5600, « 28 % », « 18 j », « 15/05/2026 »), sinon
+ * le texte lui-même. Même règle que dans le rapport HTML (export.py).
+ */
+export function valeurTri(texte) {
+  const t = String(texte ?? '').replace(/[\s\u00a0\u202f]/g, '').replace('−', '-');
+  if (t === '' || t === '—') return { n: -Infinity, s: '' };
+  const date = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (date) return { n: Number(date[3] + date[2] + date[1]), s: t };
+  const m = t.match(/^([-+]?\d+(?:[.,]\d+)?)(%|M€|Md€|j|pt)?/);
+  if (!m) return { n: null, s: t.toLowerCase() };
+  let n = Number(m[1].replace(',', '.'));
+  if (m[2] === 'Md€') n *= 1000;
+  return { n, s: t.toLowerCase() };
+}
+
+export function comparerTri(a, b) {
+  if (a.n !== null && b.n !== null) return a.n - b.n;
+  if (a.n !== null) return 1;
+  if (b.n !== null) return -1;
+  return a.s.localeCompare(b.s, 'fr');
+}
+
+/** Rend triables les tableaux `table.triable` d'un conteneur : un clic sur un
+ *  en-tête trie, un second inverse. */
+export function activerTri(racine) {
+  for (const table of racine.querySelectorAll('table.triable')) {
+    const ths = Array.from(table.querySelectorAll('thead th'));
+    ths.forEach((th, i) => {
+      const trier = () => {
+        const sens = th.getAttribute('aria-sort') === 'descending' ? 'ascending' : 'descending';
+        ths.forEach(x => x.removeAttribute('aria-sort'));
+        th.setAttribute('aria-sort', sens);
+        const tbody = table.tBodies[0];
+        const lignes = Array.from(tbody.rows);
+        const cle = (tr) => valeurTri(tr.cells[i] ? tr.cells[i].textContent : '');
+        lignes.sort((a, b) => comparerTri(cle(a), cle(b)) * (sens === 'ascending' ? 1 : -1));
+        for (const l of lignes) tbody.append(l);
+      };
+      th.addEventListener('click', trier);
+      th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); trier(); } });
+    });
+  }
 }
 
 export function echapper(v) {
