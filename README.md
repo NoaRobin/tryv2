@@ -26,6 +26,7 @@ pour la découvrir.
 
 ```bash
 python core.py                # contrôle la chaîne de bout en bout
+python tarification.py        # contrôle le moteur tarifaire et sa parité JavaScript
 python export.py              # écrit le rapport HTML sur tout l’historique
 ```
 
@@ -99,6 +100,39 @@ qui manque et ce qui a été écarté.
 `core.py` : familles (RFP / due diligence), normalisation des statuts, délais
 cibles par type, seuil ESG, horizons de croissance.
 
+### Le classeur des grilles tarifaires
+
+Le simulateur de l’écran **Tarification** lit un second classeur, indépendant du
+premier : **une ligne par tranche** d’une offre de frais passée. Il se dépose
+depuis l’écran « Données », section « Les grilles tarifaires » (lu, contrôlé,
+puis activé : jamais activé sans avoir été lu), et vit dans `data/tarification/`
+— à l’écart de `data/`, pour que la détection automatique du classeur d’activité
+ne le prenne jamais pour lui.
+
+| Colonne | Lecture |
+|---|---|
+| **`Client`** | clé catégorielle (« Client 7 ») : rien n’en est déduit |
+| **`Quantite_Minimum`**, **`Quantite_Maximum`** | bornes de la tranche, en M€ ; la dernière tranche est ouverte |
+| **`Frais_par_seuil`** | taux de la tranche, en % (0,12) ou en fraction (0,0012, format pourcentage d’Excel) — l’unité est décidée par colonne |
+| `Volume1` | l’encours de l’offre, en M€ |
+| `Annee`, `Sub_asset_class`, `Client_Prospect`, `Public_Privé`, `TVA`, `Commissions de surperformance` | millésime, expertise, issue (gagné / perdu / en cours), nature, fiscalité |
+
+Les en-têtes renommés ou tronqués sont reconnus (`tarification.COLONNES`), une
+ligne de titre au-dessus du tableau est sautée, le meilleur onglet est choisi.
+Sans classeur, le simulateur tourne sur les 48 lignes de la page 5 de la
+présentation d’origine, et le dit.
+
+**Les vrais libellés clients** remplacent « Client 7 » sans toucher au code :
+`data/tarification/correspondance_clients.csv` (`client;libelle`, UTF-8 ou
+cp1252, `;` ou `,`), à télécharger pré-rempli depuis l’écran, à compléter dans
+Excel et à redéposer — ou au crayon, ligne par ligne, dans la liste des offres.
+Un libellé identique à un client du classeur d’activité rattache l’offre à son
+dossier d’appel d’offres ; un rattachement manuel (`rattachements.json`) prime
+et se défait d’un clic. `correspondance_expertises.csv` (`expertise;dimension;valeur`, par
+exemple `Credit IG;sous_classe_actifs;Crédit investment grade`) redéfinit,
+expertise par expertise, le rapprochement avec les classes d’actifs de
+l’activité.
+
 ---
 
 ## Architecture
@@ -109,6 +143,9 @@ cibles par type, seuil ESG, horizons de croissance.
 | `server.py` | API et service de l’interface : périmètre, analyse, dossiers, rapport, branchement | FastAPI, uvicorn |
 | `static/` | L’interface : HTML, CSS, modules JavaScript — aucune étape de construction | — |
 | `export.py` | Le rapport HTML autonome | plotly |
+| `tarification.py` | Le moteur tarifaire : lecture du classeur des grilles, contrôle des anomalies, calcul progressif, corridors par tranche, croisement avec l’activité | pandas |
+| `static/js/tarif.js` | Le même calcul en JavaScript, pour simuler sans aller-retour serveur ; sa parité avec Python est testée | — |
+| `static/js/relief.js` | Le relief 3D du prix (Three.js 0.169, livré dans `static/vendor/`, sans réseau) | three |
 | `assets/` | Inter et EB Garamond (SIL OFL) ; emplacement du logo officiel | — |
 
 `core.py` n’importe pas FastAPI : il se teste et se réutilise seul (notebook,
@@ -166,11 +203,29 @@ par classe d’actifs, par segment de client, par consultant et par commercial.
 Chaque analyse porte sa phrase, sa figure, sa note de méthode et son tableau
 jumeau. Un clic sur une catégorie recalcule tout le périmètre.
 
+**Tarification** — le simulateur de prix d’appels d’offres, reconstruit depuis
+le rapport Power BI d’origine (inventaire et arbitrages angle par angle :
+[`docs/simulateur-tarification.md`](docs/simulateur-tarification.md)). On
+compose une grille **dans le tableau** — les bornes et les taux s’éditent, le
+prix et les fourchettes se recalculent à la frappe — et chaque tranche est
+située dans ce qui a déjà été pratiqué sur la même part d’encours. Puis : le prix
+dans le marché (le rang parmi les offres passées de l’expertise, à la taille du
+client), la dégressivité (le taux moyen selon la taille, avec la bande de ce qui
+a été fait), **le relief du prix** (une nappe 3D : remise ou majoration de tous
+les taux × seuils divisés ou doublés → taux payé, colorée par le rang dans les
+offres passées ; un point se choisit sur la nappe et s’écrit dans la grille ;
+« Si le mandat grossit » fait défiler la taille), le tableau des expertises aux
+tailles de référence, les offres passées — chacune ouvre **sa fiche** : sa
+grille, sa courbe, son rang, ses anomalies, les comparables, les autres offres
+du client et, croisé avec le classeur d’activité, son dossier d’appel d’offres
+et le contexte de l’année (dossiers reçus, taux de succès, encours médian).
+
 **Dossiers** — la recherche plein texte, la liste, et la fiche d’un dossier avec
 les autres dossiers du même client.
 
 **Données** — la source branchée, le dépôt d’un classeur, la correspondance des
-colonnes, la qualité de la lecture.
+colonnes, la qualité de la lecture ; et, à part, le classeur des grilles
+tarifaires et la correspondance des libellés clients.
 
 **Le champ de commande** (`Ctrl K`, `⌘ K` sur Mac, ou `/`) comprend le
 vocabulaire des données : « Suisse 2025 », « gagnés obligataire », « Bellecour »,

@@ -646,3 +646,206 @@ main { padding: 36px 0 0; }
   body { font-size: 11pt; }
   .bloc, .analyse { break-inside: avoid; }
 }
+
+/* =========================================================================
+   Tarification — le simulateur de prix des appels d'offres
+   Une teinte, ses tons. L'issue d'une offre se lit par la forme : carré plein
+   (gagnée), creux (perdue), à moitié (en cours).
+   ========================================================================= */
+.tarif .ouverture { margin-bottom: 0; }
+
+/* La barre de réglages : un seul rang de filtres, au-dessus de tout ce qu'il règle. */
+.reglages {
+  background: var(--blanc);
+  margin: 30px 0 0; padding: 14px 0 12px; border-top: 1px solid var(--b-12); border-bottom: 1px solid var(--b-12);
+}
+.tuiles { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.tuile {
+  font: inherit; font-size: 12.5px; color: var(--ink); background: var(--b-3); border: 1px solid var(--b-12);
+  border-radius: 2px; padding: 5px 10px; cursor: pointer; display: inline-flex; gap: 8px; align-items: baseline;
+  transition: background var(--duree) var(--sortie), border-color var(--duree) var(--sortie);
+}
+.tuile:hover { border-color: var(--b-36); }
+.tuile[aria-pressed="true"] { background: var(--ink); color: var(--blanc); border-color: var(--ink); }
+.tuile[disabled] { opacity: .45; cursor: default; }
+.tuile__n { font-size: 11px; font-variant-numeric: tabular-nums; }
+.reglages__ligne { display: flex; flex-wrap: wrap; gap: 10px 32px; align-items: center; }
+.reglage { display: inline-flex; align-items: center; gap: 10px; }
+.reglage__c { font-size: 10.5px; font-weight: 620; letter-spacing: .12em; text-transform: uppercase; color: var(--b-72); }
+.reglage__v { display: inline-flex; align-items: center; gap: 6px; }
+.unite { font-size: 12.5px; color: var(--b-72); }
+
+.saisie {
+  font: inherit; font-size: 13.5px; color: var(--ink); background: var(--blanc);
+  border: 1px solid var(--b-22); border-radius: 2px; padding: 4px 7px; height: 30px;
+  font-variant-numeric: tabular-nums;
+}
+.saisie:hover { border-color: var(--b-52); }
+.saisie:focus { outline: 2px solid var(--ink); outline-offset: 1px; border-color: var(--ink); }
+.saisie[aria-invalid="true"] { border-color: var(--ink); border-style: dashed; background: var(--b-6); }
+.saisie--encours { width: 84px; text-align: right; }
+.saisie--borne { width: 70px; text-align: right; }
+.saisie--taux { width: 70px; text-align: right; }
+.saisie--offre { max-width: 300px; }
+.saisie--libelle { width: 100%; min-width: 150px; }
+input[type="number"].saisie::-webkit-inner-spin-button { opacity: .35; }
+.curseur { width: 150px; accent-color: var(--ink); margin-left: 6px; }
+
+.puce-filtre {
+  font: inherit; font-size: 12.5px; color: var(--b-72); background: var(--blanc);
+  border: 1px solid var(--b-22); border-radius: 2px; padding: 3px 9px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.puce-filtre:hover { color: var(--ink); border-color: var(--b-52); }
+.puce-filtre[aria-pressed="true"] { color: var(--ink); background: var(--b-6); border-color: var(--b-52); font-weight: 560; }
+
+/* Les formes d'issue, en ligne dans le texte. */
+.forme { display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: 0; flex: none; }
+.forme--gagne { background: var(--b-100); }
+.forme--perdu { background: var(--blanc); box-shadow: inset 0 0 0 1.5px var(--b-72); }
+.forme--cours { background: linear-gradient(90deg, var(--b-72) 50%, var(--blanc) 50%); box-shadow: inset 0 0 0 1.5px var(--b-72); }
+
+.bouton--petit { height: 28px; padding: 0 11px; font-size: 12.5px; }
+.lien-sobre--mini { font-size: 11.5px; padding: 0 1px; margin-left: 8px; }
+.prose--bloc { font-size: 19px; margin-bottom: 14px; }
+.prose--bloc b { font-weight: 560; }
+
+/* La grille éditable. */
+.outils-grille { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.outils-grille__depart { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.outils-grille__depart .cle { margin-right: 4px; }
+.outils-grille__export { display: flex; gap: 14px; }
+table.grille-tarif { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.grille-tarif th {
+  text-align: left; font-size: 10px; font-weight: 620; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--b-72); padding: 8px 8px 8px 0; border-bottom: 1px solid var(--b-22); white-space: nowrap;
+}
+table.grille-tarif th.num, table.grille-tarif td.num { text-align: right; padding-left: 12px; }
+table.grille-tarif td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--b-12); vertical-align: middle; white-space: nowrap; }
+table.grille-tarif td .unite { margin-left: 4px; }
+table.grille-tarif tfoot td { border-bottom: 0; padding-top: 12px; }
+.grille-tarif__nom { font-weight: 620; color: var(--b-72); font-size: 12px; letter-spacing: .06em; }
+.grille-tarif__marche { padding-left: 18px !important; }
+/* Deux lignes stables : la bande, puis la fourchette et le raccourci vers la médiane. */
+.grille-tarif__marche svg { display: block; margin: 0 0 3px; }
+.grille-tarif__fourchette { font-size: 12px; font-variant-numeric: tabular-nums; }
+.grille-tarif__marche .cellule-sous { display: inline; margin: 0; white-space: nowrap; }
+.grille-tarif__marche .lien-sobre--mini { display: inline; margin-left: 8px; white-space: nowrap; }
+.grille-tarif__marche { white-space: normal !important; min-width: 236px; }
+.grille-tarif__total { font-size: 13px; }
+.grille-tarif__total b { font-size: 15px; font-weight: 620; }
+.grille-tarif__actions { width: 28px; text-align: right; }
+.croix { border: 0; background: none; color: var(--b-52); font-size: 17px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 2px; }
+.croix:hover { color: var(--ink); background: var(--b-6); }
+.grille-origine { margin-top: 10px; }
+
+/* Les figures SVG. */
+.figure-tarif { position: relative; }
+.figure-tarif__svg { width: 100%; height: auto; display: block; overflow: visible; }
+.figure-tarif .graduation { font-size: 10.5px; fill: var(--b-72); font-variant-numeric: tabular-nums; }
+.figure-tarif .titre-axe { font-size: 10px; fill: var(--b-72); letter-spacing: .08em; text-transform: uppercase; }
+.figure-tarif .etiquette-fin { font-size: 11.5px; fill: var(--b-72); }
+.figure-tarif .etiquette-fin--forte { fill: var(--ink); font-weight: 620; }
+.figure-tarif .etiquette-repere { font-size: 11px; fill: var(--b-72); font-variant-numeric: tabular-nums; }
+.figure-tarif .marque-offre:focus { outline: none; }
+.figure-tarif .marque-offre:focus-visible rect:nth-child(2) { stroke: var(--ink); stroke-width: 2; }
+.infobulle {
+  position: absolute; z-index: 5; pointer-events: none; background: var(--blanc); border: 1px solid var(--b-22);
+  padding: 8px 10px; min-width: 170px; font-size: 12px;
+}
+.infobulle__titre { font-weight: 620; color: var(--ink); margin-bottom: 4px; }
+.infobulle__ligne { display: flex; justify-content: space-between; gap: 16px; color: var(--b-72); line-height: 1.6; }
+.infobulle__v { color: var(--ink); font-variant-numeric: tabular-nums; }
+.legende-tarif { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0 10px; font-size: 12px; color: var(--b-72); }
+.legende-tarif__item { display: inline-flex; align-items: center; gap: 7px; }
+.trait { display: inline-block; width: 22px; height: 0; border-top: 1.5px solid var(--b-52); }
+.trait--fort { border-top: 2.5px solid var(--b-100); }
+.trait--pointille { border-top: 1.5px dotted var(--b-52); }
+.aplat { display: inline-block; width: 18px; height: 10px; }
+.aplat--clair { background: var(--b-6); }
+.aplat--fonce { background: var(--b-12); }
+.repere-marche { margin-top: 2px; }
+
+/* Le relief : pleine largeur, repères de lecture sous la figure. */
+.bloc--large { grid-template-columns: minmax(0, 1fr); }
+.bloc--large .bloc__marge { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--gouttiere); }
+.bloc--large .bloc__marge .marge-titre { grid-column: 1 / -1; }
+.relief-hote {
+  position: relative; height: 500px; margin: 8px 0 10px; border-top: 1px solid var(--b-12); border-bottom: 1px solid var(--b-12);
+  background: radial-gradient(ellipse at 50% 40%, var(--blanc) 0%, var(--b-3) 100%); overflow: hidden;
+}
+.relief__toile { width: 100%; height: 100%; display: block; touch-action: none; }
+.relief__calque { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.relief__etiquette { position: absolute; left: 0; top: 0; white-space: nowrap; --dx: -50%; --dy: -50%; will-change: transform; }
+.relief__graduation { font-size: 11px; color: var(--b-72); font-variant-numeric: tabular-nums; }
+.relief__graduation--droite { --dx: -100%; }
+.relief__graduation--gauche { --dx: 0%; }
+.relief__titre-axe { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--b-72); }
+.relief__titre-axe--haut { --dx: -80%; --dy: -100%; }
+.relief__offre {
+  --dy: -100%; background: var(--blanc); border: 1px solid var(--ink); padding: 3px 8px; font-size: 12px; color: var(--ink);
+}
+.relief__offre b { font-weight: 620; }
+.relief__offre--variante { border-style: dashed; }
+.relief__limite { --dx: 10px; font-size: 10.5px; color: var(--ink); background: rgba(255, 255, 255, .88); padding: 1px 5px; }
+.relief-commandes { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.relief-commandes__droite { display: inline-flex; gap: 12px; align-items: center; }
+.relief-vues { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.relief-commandes .relief-vues { margin-bottom: 0; }
+.relief-variante {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 10px 12px; background: var(--b-3); border-left: 2px solid var(--ink); font-size: 13.5px; margin-bottom: 10px;
+}
+.relief-variante b { font-weight: 620; }
+.relief-variante[hidden] { display: none; }
+.relief-variante__actions { display: inline-flex; gap: 14px; align-items: center; }
+.relief-lecture { font-size: 13.5px; max-width: 90ch; }
+
+/* Le référentiel des expertises et la liste des offres. */
+table.table-expertises td, table.table-offres td { white-space: nowrap; }
+table.table-expertises .ligne-moi td { background: var(--b-3); border-bottom-color: var(--b-22); }
+table.table-expertises .ligne-moi td:first-child { font-weight: 620; }
+table.table-expertises .ligne-choisie td { box-shadow: inset 0 -1px 0 var(--ink); font-weight: 560; }
+table.table-offres th[role="button"], table.table-expertises th[role="button"] { cursor: pointer; }
+table.table-offres th[aria-sort] { color: var(--ink); }
+table.table-offres .col-issue { padding-left: 18px; }
+table.table-offres .col-dossier { padding-left: 28px; }
+.cellule-client { min-width: 140px; }
+.nom-client { font-weight: 560; }
+.crayon {
+  border: 0; background: none; color: var(--b-52); cursor: pointer; font-size: 13px; padding: 0 5px; margin-left: 4px;
+  opacity: 0; transition: opacity var(--duree) var(--sortie);
+}
+tr:hover .crayon, .crayon:focus-visible, .fiche__nom-offre .crayon { opacity: 1; }
+.crayon:hover { color: var(--ink); }
+.lien-dossier { font-size: 12.5px; color: var(--ink); border-bottom: 1px solid var(--b-22); }
+.ligne-signalee td:first-child { box-shadow: inset 2px 0 0 var(--b-36); padding-left: 8px; }
+
+.liste-anomalies { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
+.liste-anomalies li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--b-12); flex-wrap: wrap; }
+.gravite { font-size: 10px; font-weight: 620; letter-spacing: .1em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--b-36); color: var(--b-72); }
+.gravite--bloquante { background: var(--ink); color: var(--blanc); border-color: var(--ink); }
+.gravite--attention { border-color: var(--ink); color: var(--ink); }
+
+/* La fiche d'une offre. */
+.fiche--offre { width: min(640px, 100%); }
+.fiche__nom-offre { margin-top: 4px; }
+.fiche__nom-offre .nom-client { font-family: var(--police-serif); font-size: 26px; line-height: 1.2; font-weight: 400; color: var(--ink); }
+.fiche__nom-offre .cellule-sous { margin-top: 2px; }
+.fiche__section { font-size: 10.5px; font-weight: 620; letter-spacing: .15em; text-transform: uppercase; color: var(--ink); margin: 28px 0 10px; }
+.champs--fiche { margin-top: 12px; }
+.table-fiche td, .table-fiche th { white-space: nowrap; }
+.comparables { display: grid; gap: 2px; }
+.comparable {
+  font: inherit; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline;
+  text-align: left; background: none; border: 0; border-bottom: 1px solid var(--b-12); padding: 8px 2px; cursor: pointer; color: var(--ink); font-size: 13.5px;
+}
+.comparable:hover { background: var(--b-3); }
+.comparable .attenue { grid-column: 2 / -1; font-size: 12px; }
+.comparable__v { font-variant-numeric: tabular-nums; color: var(--b-72); }
+.candidat { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--b-12); }
+.candidat .note { grid-column: 1; }
+.candidat .bouton { grid-column: 2; grid-row: 1 / span 2; }
+.candidat__tete { font-size: 14px; }
+#grilles-tarifaires { scroll-margin-top: 84px; }
+table.apercu-tarif td:not(:last-child), table.apercu-tarif th { white-space: nowrap; }

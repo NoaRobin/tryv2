@@ -35,6 +35,7 @@ async function peindre(zone, ctx) {
   colonne.append(blocDepot(etat, ctx, zone));
   if (etat.fichiers.length) colonne.append(blocFichiers(etat, ctx, zone));
   colonne.append(blocQualite(etat));
+  colonne.append(blocTarif(ctx));
   grille.append(colonne);
 
   const marge = h('div.marge-col');
@@ -290,5 +291,184 @@ function blocQualite(etat) {
       texte: `Colonnes du fichier non utilisées : ${s.colonnes_ignorees.slice(0, 12).join(', ')}`
         + (s.colonnes_ignorees.length > 12 ? '…' : '') + '.' }));
   }
+  return b;
+}
+
+/* ------------------------------------------------ grilles tarifaires --- */
+// Le second classeur : celui des grilles de frais (une ligne par tranche),
+// qui nourrit l'écran Tarification. Même geste que pour l'activité :
+// déposer, lire ce qui a été compris, activer. Rien n'est activé sans avoir été lu.
+function blocTarif(ctx) {
+  const b = h('section', { id: 'grilles-tarifaires', style: { marginBottom: '36px', paddingTop: '28px',
+    borderTop: '1px solid var(--b-12)' } });
+  peindreTarif(b, ctx);
+  return b;
+}
+
+async function peindreTarif(b, ctx) {
+  vider(b).append(h('div.cle.cle--ink', { texte: 'Les grilles tarifaires', style: { marginBottom: '12px' } }),
+    chargement('Lecture des grilles…'));
+  let etat;
+  try {
+    etat = await api.get('/api/tarif/donnees');
+  } catch (e) {
+    b.append(message(`État des grilles illisible : ${e.message}`));
+    return;
+  }
+  const titre = b.firstChild;
+  vider(b).append(titre);
+  const s = etat.source;
+  const p = h('p.prose');
+  if (s.mode === 'demo') {
+    p.append('Le simulateur de l’écran Tarification tourne sur l’');
+    p.append(h('b', { texte: 'échantillon de la présentation' }));
+    p.append(` : ${entier(s.n_lignes)} lignes, ${entier(etat.n_offres)} offres. Déposez le classeur des grilles pour le remplacer.`);
+  } else {
+    p.append('Le simulateur lit ');
+    p.append(h('b', { texte: s.fichier }));
+    if (s.onglet) p.append(`, onglet « ${s.onglet} »`);
+    p.append(` : ${entier(s.n_lignes)} lignes, `);
+    p.append(h('b', { texte: `${entier(etat.n_offres)} offres` }));
+    p.append(etat.n_anomalies ? `, ${entier(etat.n_anomalies)} points signalés dans l’écran.` : ', sans anomalie.');
+  }
+  b.append(p);
+  if (s.alertes && s.alertes.length) {
+    const ul = h('ul.note', { style: { margin: '10px 0 0', paddingLeft: '18px' } });
+    for (const a of s.alertes) ul.append(h('li', { texte: a }));
+    b.append(ul);
+  }
+
+  const actions = h('p', { style: { marginTop: '14px', display: 'flex', gap: '18px', flexWrap: 'wrap' } });
+  actions.append(lien('Ouvrir le simulateur', () => ctx.aller ? ctx.aller('tarification') : (window.location.href = '/?ecran=tarification')));
+  if (s.mode !== 'demo') {
+    actions.append(lien('Revenir à l’échantillon', async () => {
+      await api.post('/api/tarif/donnees/demo');
+      annoncer('Le simulateur est revenu à l’échantillon.');
+      peindreTarif(b, ctx);
+    }));
+  }
+  b.append(actions);
+
+  // Ce qui est attendu : une ligne par tranche, quatre colonnes indispensables.
+  const attendu = h('p.note', { style: { marginTop: '16px' } });
+  attendu.append('Une ligne par tranche. Colonnes reconnues : ');
+  etat.colonnes.forEach((c, i) => {
+    if (i) attendu.append(', ');
+    attendu.append(c.obligatoire ? h('b', { texte: c.attendu }) : c.attendu);
+  });
+  attendu.append(' — en gras, les indispensables. Les en-têtes renommés ou tronqués sont reconnus ; '
+    + 'les taux se lisent en % (0,12) comme en fraction (0,0012).');
+  b.append(attendu);
+
+  // Dépôt.
+  const entree = h('input', { type: 'file', accept: '.xlsx,.xlsm,.xls,.csv,.tsv,.txt', style: { display: 'none' } });
+  const depot = h('div.depot', { role: 'button', tabindex: '0', style: { marginTop: '16px' },
+    onclick: () => entree.click(),
+    onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); entree.click(); } },
+    ondragover: (e) => { e.preventDefault(); depot.classList.add('depot--survol'); },
+    ondragleave: () => depot.classList.remove('depot--survol'),
+    ondrop: (e) => {
+      e.preventDefault(); depot.classList.remove('depot--survol');
+      if (e.dataTransfer.files[0]) envoyer(e.dataTransfer.files[0]);
+    } });
+  depot.append(h('div.depot__t', { texte: 'Déposer le classeur des grilles' }),
+    h('p.note', { style: { marginTop: '6px' }, texte: 'Excel ou CSV, 50 Mo au plus. Il est lu, pas encore activé.' }), entree);
+  entree.addEventListener('change', () => { if (entree.files[0]) envoyer(entree.files[0]); });
+  const retour = h('div', { style: { marginTop: '16px' } });
+  b.append(depot, retour);
+
+  async function envoyer(fichier) {
+    vider(retour).append(chargement(`Lecture de ${fichier.name}…`));
+    try {
+      const r = await api.deposer('/api/tarif/donnees/fichier', fichier);
+      vider(retour).append(apercuTarif(r, () => activer(r.fichier, r.journal.onglet)));
+      annoncer(`${fichier.name} lu : ${r.journal.n_grilles} offres.`);
+    } catch (e) {
+      vider(retour).append(message(`Le classeur n’a pas pu être lu : ${e.message}`));
+    }
+  }
+
+  async function activer(fichier, onglet) {
+    vider(retour).append(chargement('Contrôle et activation…'));
+    try {
+      const r = await api.post('/api/tarif/donnees/activer', { fichier, onglet: onglet || null });
+      annoncer(`${r.n_offres} offres activées.`);
+      await peindreTarif(b, ctx);
+      b.append(message(`${entier(r.n_offres)} offres lues. L’écran Tarification affiche désormais ces grilles.`));
+    } catch (e) {
+      vider(retour).append(message(`Activation refusée : ${e.message}`));
+    }
+  }
+
+  // Les classeurs déjà déposés.
+  if (etat.fichiers.length) {
+    b.append(h('div.cle', { texte: 'Classeurs présents', style: { margin: '24px 0 6px' } }));
+    for (const f of etat.fichiers) {
+      const actif = s.mode !== 'demo' && s.fichier === f.nom;
+      const ligne = h('div', { style: { display: 'flex', gap: '16px', alignItems: 'baseline',
+        padding: '9px 0', borderBottom: '1px solid var(--b-12)' } });
+      ligne.append(h('span', { texte: f.nom, style: { flex: 1, fontSize: '14px' } }),
+        h('span.note', { texte: `${(f.taille / 1024).toFixed(0)} ko · ${f.modifie.replace('T', ' à ')}` }),
+        actif ? h('span.note', {}, h('b', { texte: 'branché' })) : lien('Activer', () => activer(f.nom, null)));
+      b.append(ligne);
+    }
+  }
+
+  // Les libellés clients, pour remplacer « Client 7 » sans toucher au code.
+  const entreeLib = h('input', { type: 'file', accept: '.csv,.txt,.xlsx,.xlsm,.xls', style: { display: 'none' },
+    onchange: async () => {
+      if (!entreeLib.files[0]) return;
+      try {
+        const r = await api.deposer('/api/tarif/correspondance', entreeLib.files[0]);
+        annoncer(`${r.n_libelles} libellés appliqués.`);
+        peindreTarif(b, ctx);
+      } catch (e) { annoncer(`Correspondance refusée : ${e.message}`); }
+    } });
+  b.append(h('div.cle', { texte: 'Libellés clients', style: { margin: '24px 0 8px' } }),
+    h('p.note', { html: 'Le classeur nomme ses clients « Client 1 », « Client 2 »… La correspondance '
+      + '(<b>client ; libelle</b>) leur rend leur vrai nom partout dans l’écran. Elle se remplit dans Excel '
+      + 'ou au crayon, ligne par ligne, dans la liste des offres.' }),
+    h('p', { style: { marginTop: '10px', display: 'flex', gap: '18px', flexWrap: 'wrap' } },
+      lien('Télécharger la correspondance', () => { window.location.href = '/api/tarif/correspondance.csv'; }),
+      lien('Déposer une correspondance', () => entreeLib.click()), entreeLib));
+}
+
+function apercuTarif(r, activer) {
+  const j = r.journal;
+  const b = h('section', { style: { borderTop: '1px solid var(--b-22)', paddingTop: '20px' } });
+  const entete = h('p.prose', { style: { fontSize: '18px', marginBottom: '14px' } });
+  entete.append(`${entier(j.n_lignes)} lignes lues dans ${r.fichier}`, j.onglet ? `, onglet « ${j.onglet} »` : '',
+    ` : ${entier(j.n_grilles)} offres`);
+  entete.append(r.n_exclues ? `, dont ${entier(r.n_exclues)} écartée${r.n_exclues > 1 ? 's' : ''} des comparaisons.` : '.');
+  b.append(entete);
+  const reconnues = Object.entries(j.colonnes || {});
+  if (reconnues.length) {
+    b.append(h('p.note', { texte: `Colonnes reconnues : ${reconnues.map(([, en]) => en).join(', ')}.`
+      + (j.unite_taux ? ` Taux lus en ${j.unite_taux}.` : '') }));
+  }
+  if (j.ignorees && j.ignorees.length) b.append(h('p.note', { texte: `Non utilisées : ${j.ignorees.join(', ')}.` }));
+  if (j.alertes && j.alertes.length) {
+    const ul = h('ul.note', { style: { margin: '8px 0 0', paddingLeft: '18px' } });
+    for (const a of j.alertes) ul.append(h('li', { texte: a }));
+    b.append(ul);
+  }
+  const table = h('table.correspondance.apercu-tarif');
+  table.append(h('thead', {}, h('tr', {}, ...['Client', 'Année', 'Expertise', 'Issue', 'Tranches', 'Taux moyen', 'Signalé']
+    .map(t => h('th', { texte: t })))));
+  const corps = h('tbody');
+  for (const o of r.apercu) {
+    corps.append(h('tr', {},
+      h('td', { texte: o.client }), h('td', { texte: o.annee ?? '—' }), h('td', { texte: o.expertise || '—' }),
+      h('td', { texte: o.issue }), h('td', { texte: entier(o.n_tranches) }),
+      h('td', { texte: o.taux_volume === null || o.taux_volume === undefined ? '—'
+        : `${o.taux_volume.toLocaleString('fr-FR', { maximumFractionDigits: 3 })} %` }),
+      h('td.note', { texte: o.anomalies.length ? o.anomalies[0] + (o.anomalies.length > 1 ? ` (+${o.anomalies.length - 1})` : '') : '—' })));
+  }
+  table.append(corps);
+  b.append(h('div.tableau', { style: { marginTop: '14px' } }, table));
+  if (j.n_grilles > r.apercu.length) b.append(h('p.note', { texte: `Les ${entier(r.apercu.length)} premières offres sur ${entier(j.n_grilles)}.` }));
+  const bouton = h('button.bouton', { type: 'button', texte: 'Activer ces grilles', onclick: activer });
+  b.append(h('p', { style: { marginTop: '18px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' } },
+    bouton, h('span.note', { texte: 'Les colonnes indispensables sont reconnues.' })));
   return b;
 }

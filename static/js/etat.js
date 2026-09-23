@@ -4,7 +4,8 @@
 // Un lien copié rouvre exactement le même écran, le même périmètre, la même
 // fiche. Le bouton « précédent » du navigateur fonctionne.
 
-export const ECRANS = ['lecture', 'activite', 'rfp', 'dd', 'aum', 'esg', 'diagnostic', 'dossiers', 'donnees'];
+export const ECRANS = ['lecture', 'activite', 'rfp', 'dd', 'aum', 'esg', 'diagnostic', 'tarification',
+  'dossiers', 'donnees'];
 const CLES_RESERVEES = new Set(['ecran', 'periode', 'date_min', 'date_max', 'q', 'dossier',
   'granularite', 'esg_mode', 'bloc', 'section']);
 

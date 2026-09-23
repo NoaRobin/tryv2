@@ -10,6 +10,10 @@ import { rendreSituation, reinitialiserNumerotation } from './ecrans/situation.j
 import { rendreAnalyses, nettoyerFigures } from './ecrans/analyses.js';
 import { rendreDossiers, ouvrirFiche } from './ecrans/dossiers.js';
 import { rendreDonnees } from './ecrans/donnees.js';
+import { rendreTarification } from './ecrans/tarification.js';
+
+// Les écrans qui ne lisent pas l'analyse d'activité : ni calcul, ni périmètre.
+const OUTILS = ['donnees', 'tarification'];
 
 const QUESTIONS = ['activite', 'rfp', 'dd', 'aum', 'esg', 'diagnostic'];
 
@@ -120,7 +124,7 @@ function barreMarque() {
 function navPrincipale(classe) {
   const nav = h(`nav.${classe}`, { 'aria-label': 'Sections' });
   const entrees = [['lecture', 'Situation'], ['analyses', 'Analyses'],
-    ['dossiers', 'Dossiers'], ['donnees', 'Données']];
+    ['tarification', 'Tarification'], ['dossiers', 'Dossiers'], ['donnees', 'Données']];
   const courant = QUESTIONS.includes(App.etat.ecran) ? 'analyses' : App.etat.ecran;
   for (const [cle, libelle] of entrees) {
     nav.append(h('a', {
@@ -257,7 +261,7 @@ async function rafraichir(options = {}) {
   if (entetes) entetes.replaceWith(navPrincipale('nav'));
   if (ancienne) ancienne.replaceWith(navMobile());
 
-  const besoinAnalyse = App.etat.ecran !== 'donnees';
+  const besoinAnalyse = !OUTILS.includes(App.etat.ecran);
   const signature = Etat.signaturePerimetre(App.etat);
   if (besoinAnalyse && (signature !== App.signature || !App.analyse)) {
     nettoyerFigures(zone);
@@ -276,7 +280,7 @@ async function rafraichir(options = {}) {
   }
   peindrePerimetre();
   const barrePerimetreEl = document.getElementById('perimetre');
-  if (barrePerimetreEl) barrePerimetreEl.hidden = App.etat.ecran === 'donnees';
+  if (barrePerimetreEl) barrePerimetreEl.hidden = OUTILS.includes(App.etat.ecran);
   peindreEcran();
   majPied();
 
@@ -301,6 +305,7 @@ function peindreEcran() {
   reinitialiserNumerotation();
 
   if (App.etat.ecran === 'donnees') { zone.append(rendreDonnees(ctx)); return; }
+  if (App.etat.ecran === 'tarification') { zone.append(rendreTarification(ctx)); return; }
   if (!App.analyse) { zone.append(chargement()); return; }
   if (App.analyse.vide) {
     zone.append(h('div.ecran', {}, message(
@@ -446,7 +451,7 @@ function ouvrirPalette() {
     if (!texte.trim()) {
       for (const [cle, libelle] of [['lecture', 'Situation'], ...(App.analyse?.sections || [])
         .filter(s => QUESTIONS.includes(s.cle)).map(s => [s.cle, s.libelle]),
-      ['dossiers', 'Dossiers'], ['donnees', 'Données']]) {
+      ['tarification', 'Tarification'], ['dossiers', 'Dossiers'], ['donnees', 'Données']]) {
         propositions.push({ libelle, detail: 'Écran', action: () => aller(cle) });
       }
       propositions.push({ libelle: 'Générer le rapport du périmètre', detail: 'Rapport',

@@ -17,6 +17,8 @@ const ECRANS = [
   ['aum', ['encours', 'gains', 'mandats', 'collecte', 'aum']],
   ['esg', ['esg']],
   ['diagnostic', ['diagnostic', 'constats', 'causes', 'tendance', 'projection']],
+  ['tarification', ['tarification', 'tarif', 'tarifs', 'prix', 'frais', 'grille', 'grilles', 'simulateur',
+    'simulation', 'fourchette', 'pricing']],
   ['dossiers', ['dossiers', 'explorateur', 'explorer', 'liste', 'recherche', 'fiche']],
   ['donnees', ['donnees', 'data', 'source', 'brancher', 'branchement', 'import', 'importer', 'qualite', 'fichier', 'excel', 'classeur']],
   ['rapport', ['rapport', 'export', 'exporter', 'html', 'pdf', 'imprimer']],

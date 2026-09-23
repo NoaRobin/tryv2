@@ -19,6 +19,17 @@
 #    GET  /api/donnees/apercu        colonnes, correspondance proposée, premières lignes
 #    POST /api/donnees/activer       écrit data/branchement.json et recharge
 #    POST /api/donnees/demo          revient aux données de démonstration
+#    GET  /api/tarif                 offres passées, expertises, grille type (simulateur)
+#    GET  /api/tarif/offres/{id}     fiche d’une offre, croisée avec l’activité
+#    GET  /api/tarif/offres/{id}/candidats   dossiers d’activité candidats au rattachement
+#    POST /api/tarif/offres/{id}/rattachement  rattache (ou détache) un dossier
+#    POST /api/tarif/libelles        libellé réel d’un client anonymisé
+#    GET  /api/tarif/correspondance.csv   la correspondance des clients, à remplir
+#    POST /api/tarif/correspondance  dépôt d’une correspondance (CSV ou classeur)
+#    GET  /api/tarif/donnees         état du classeur tarifaire branché
+#    POST /api/tarif/donnees/fichier dépôt d’un classeur de grilles dans data/tarification/
+#    POST /api/tarif/donnees/activer branche ce classeur
+#    POST /api/tarif/donnees/demo    revient à l’échantillon de démonstration
 #    GET  /vendor/plotly.min.js      Plotly, servi depuis le paquet Python (hors ligne)
 # =============================================================================
 from __future__ import annotations
@@ -40,6 +51,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import core
+import tarification
 
 RACINE = Path(__file__).resolve().parent
 DOSSIER_STATIC = RACINE / "static"
@@ -512,6 +524,251 @@ def reprendre_fichier() -> JSONResponse:
         core.ecrire_branchement(b)
     ETAT.recharger()
     return JSONResponse(_propre({"etat": _etat_donnees()}))
+
+
+# =============================================================================
+#  TARIFICATION — le simulateur de prix des appels d’offres
+# -----------------------------------------------------------------------------
+#  Le calcul vit dans tarification.py (et, à l’identique, dans static/js/tarif.js
+#  pour l’édition en direct). Ici, on ne fait que servir et persister.
+# =============================================================================
+class EtatTarif:
+    """Les grilles du classeur tarifaire et leur journal."""
+
+    def __init__(self) -> None:
+        self._verrou = threading.Lock()
+        self.grilles: list[tarification.Grille] = []
+        self.journal = tarification.Journal()
+        self.recharger()
+
+    def recharger(self) -> None:
+        with self._verrou:
+            self.grilles, self.journal = tarification.charger()
+
+    def grille(self, gid: str) -> tarification.Grille:
+        for g in self.grilles:
+            if g.id == gid:
+                return g
+        raise HTTPException(status_code=404, detail="Offre introuvable.")
+
+    @property
+    def clients(self) -> set[str]:
+        return {g.client for g in self.grilles}
+
+
+TARIF = EtatTarif()
+
+
+def _offre(g: tarification.Grille, libelles: dict[str, str],
+           index: dict[str, int], liens: dict[str, str]) -> dict[str, Any]:
+    d = g.to_dict()
+    d["libelle"] = libelles.get(g.client) or g.client
+    d["libelle_edite"] = g.client in libelles
+    idx, mode = tarification.dossier_rattache(g, ETAT.df, libelles.get(g.client), index, liens)
+    d["rattachement"] = None if idx is None else {
+        "id": int(idx), "mode": mode, "cle": tarification.cle_dossier(ETAT.df.loc[idx]),
+        "client": str(ETAT.df.loc[idx, "client"]),
+        "numero": _propre(ETAT.df.loc[idx].get("numero"))}
+    return d
+
+
+def _contexte_offres() -> tuple[dict[str, str], dict[str, int], dict[str, str]]:
+    libelles = tarification.libelles_clients()
+    liens = tarification.rattachements()
+    index = tarification.index_dossiers(ETAT.df) if liens else {}
+    return libelles, index, liens
+
+
+@app.get("/api/tarif")
+def tarif() -> JSONResponse:
+    libelles, index, liens = _contexte_offres()
+    expertises: dict[str, dict[str, Any]] = {}
+    for g in TARIF.grilles:
+        e = expertises.setdefault(g.expertise_cle, {"cle": g.expertise_cle, "libelle": g.expertise,
+                                                    "n": 0, "n_total": 0})
+        e["n_total"] += 1
+        e["n"] += 0 if g.exclue else 1
+    return JSONResponse(_propre({
+        "source": TARIF.journal.to_dict(),
+        "offres": [_offre(g, libelles, index, liens) for g in TARIF.grilles],
+        "expertises": sorted(expertises.values(), key=lambda e: (-e["n"], e["libelle"])),
+        "annees": sorted({g.annee for g in TARIF.grilles if g.annee}),
+        "issues": [i for i in tarification.ISSUES if any(g.issue == i for g in TARIF.grilles)],
+        "natures": sorted({g.nature for g in TARIF.grilles if g.nature}),
+        "grille_type": [{"minimum": a, "maximum": b, "taux": r} for a, b, r in tarification.GRILLE_TYPE],
+        "seuils_reference": list(tarification.SEUILS_REFERENCE),
+        "correspondance": {"fichier": tarification.FICHIER_CLIENTS.name,
+                           "present": tarification.FICHIER_CLIENTS.exists(),
+                           "n_libelles": sum(1 for c in TARIF.clients if c in libelles)},
+        "activite": {"disponible": not ETAT.df.empty,
+                     "source": ETAT.rapport.source if ETAT.rapport else None,
+                     "mode": ETAT.rapport.mode if ETAT.rapport else None},
+    }))
+
+
+@app.get("/api/tarif/offres/{gid}")
+def fiche_offre(gid: str) -> JSONResponse:
+    g = TARIF.grille(gid)
+    libelles, _, liens = _contexte_offres()
+    index = tarification.index_dossiers(ETAT.df)
+    d = _offre(g, libelles, index, liens)
+    d["dossier"] = None
+    if d["rattachement"]:
+        idx = d["rattachement"]["id"]
+        (d["dossier"],) = _dossiers(ETAT.df.loc[[idx]], [c for c in ETAT.df.columns if c in LIBELLES_DOSSIER])
+    d["contexte"] = tarification.contexte_activite(g, ETAT.df)
+    d["autres_offres_client"] = [
+        {"id": o.id, "annee": o.annee, "expertise": o.expertise, "issue": o.issue,
+         "volume": o.volume, "taux_volume": o.taux_volume}
+        for o in TARIF.grilles if o.client == g.client and o.id != g.id]
+    return JSONResponse(_propre(d))
+
+
+@app.get("/api/tarif/offres/{gid}/candidats")
+def candidats_offre(gid: str, niveau: int | None = Query(default=None, ge=0, le=3)) -> JSONResponse:
+    g = TARIF.grille(gid)
+    return JSONResponse(_propre(tarification.candidats(g, ETAT.df, niveau)))
+
+
+@app.post("/api/tarif/offres/{gid}/rattachement")
+async def rattacher_offre(gid: str, request: Request) -> JSONResponse:
+    g = TARIF.grille(gid)
+    corps = await request.json()
+    cle = str(corps.get("dossier") or "").strip() or None
+    if cle is not None and cle not in tarification.index_dossiers(ETAT.df):
+        raise HTTPException(status_code=404, detail="Dossier d’activité introuvable.")
+    tarification.ecrire_rattachement(g.id, cle)
+    return fiche_offre(gid)
+
+
+@app.post("/api/tarif/libelles")
+async def libelle_client(request: Request) -> JSONResponse:
+    corps = await request.json()
+    client = str(corps.get("client") or "").strip()
+    libelle = re.sub(r"\s+", " ", str(corps.get("libelle") or "")).strip()
+    if client not in TARIF.clients:
+        raise HTTPException(status_code=404, detail="Client inconnu du classeur tarifaire.")
+    if len(libelle) > 120:
+        raise HTTPException(status_code=422, detail="Libellé trop long (120 caractères au plus).")
+    libelles = tarification.libelles_clients()
+    if libelle and libelle != client:
+        libelles[client] = libelle
+    else:
+        libelles.pop(client, None)
+    tarification.ecrire_libelles(libelles, TARIF.clients)
+    return JSONResponse({"client": client, "libelle": libelles.get(client, client),
+                         "libelle_edite": client in libelles})
+
+
+@app.get("/api/tarif/correspondance.csv")
+def correspondance_csv() -> Response:
+    return Response(content=tarification.csv_correspondance(TARIF.clients),
+                    media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="correspondance_clients.csv"'})
+
+
+@app.post("/api/tarif/correspondance")
+async def deposer_correspondance(fichier: UploadFile = File(...)) -> JSONResponse:
+    suffixe = Path(fichier.filename or "correspondance.csv").suffix.lower()
+    if suffixe not in tarification.EXTENSIONS:
+        raise HTTPException(status_code=415, detail="Formats acceptés : .csv, .txt, .xlsx, .xlsm, .xls")
+    contenu = await fichier.read()
+    if not contenu or len(contenu) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=422, detail="Fichier vide ou trop volumineux (5 Mo au plus).")
+    tarification.DOSSIER.mkdir(parents=True, exist_ok=True)
+    temporaire = tarification.DOSSIER / f".depot{suffixe}"
+    temporaire.write_bytes(contenu)
+    try:
+        libelles = tarification.lire_correspondance(temporaire)
+    except tarification.ClasseurInvalide as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        temporaire.unlink(missing_ok=True)
+    tarification.ecrire_libelles(libelles, TARIF.clients)
+    connus = sum(1 for c in libelles if c in TARIF.clients)
+    return JSONResponse({"n_libelles": connus, "n_inconnus": len(libelles) - connus})
+
+
+def _etat_tarif() -> dict[str, Any]:
+    fichiers = []
+    for p in tarification.fichiers_disponibles():
+        st = p.stat()
+        fichiers.append({"nom": p.name, "taille": st.st_size,
+                         "modifie": dt.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="minutes")})
+    return {
+        "source": TARIF.journal.to_dict(),
+        "branchement": tarification.lire_branchement(),
+        "fichiers": fichiers,
+        "dossier": str(tarification.DOSSIER),
+        "n_offres": len(TARIF.grilles),
+        "n_anomalies": sum(len(g.anomalies) for g in TARIF.grilles),
+        "colonnes": [{"cle": c, "attendu": officiel, "synonymes": list(syn),
+                      "obligatoire": c in tarification.OBLIGATOIRES}
+                     for c, (officiel, syn) in tarification.COLONNES.items()],
+    }
+
+
+@app.get("/api/tarif/donnees")
+def donnees_tarif() -> JSONResponse:
+    return JSONResponse(_propre(_etat_tarif()))
+
+
+@app.post("/api/tarif/donnees/fichier")
+async def deposer_tarif(fichier: UploadFile = File(...)) -> JSONResponse:
+    nom = NOM_FICHIER_SUR.sub("_", Path(fichier.filename or "grilles.xlsx").name).strip() or "grilles.xlsx"
+    if Path(nom).suffix.lower() not in tarification.EXTENSIONS:
+        raise HTTPException(status_code=415, detail="Formats acceptés : .xlsx, .xlsm, .xls, .csv, .tsv, .txt")
+    if nom in (tarification.FICHIER_CLIENTS.name, tarification.FICHIER_EXPERTISES.name):
+        raise HTTPException(status_code=422, detail="Ce nom est réservé aux fichiers de correspondance.")
+    contenu = await fichier.read()
+    if not contenu:
+        raise HTTPException(status_code=422, detail="Le fichier est vide.")
+    if len(contenu) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Fichier trop volumineux (50 Mo au plus).")
+    tarification.DOSSIER.mkdir(parents=True, exist_ok=True)
+    chemin = tarification.DOSSIER / nom
+    chemin.write_bytes(contenu)
+    try:
+        grilles, journal = tarification.lire_classeur(chemin)
+    except tarification.ClasseurInvalide as exc:
+        chemin.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return JSONResponse(_propre({
+        "fichier": nom, "journal": journal.to_dict(),
+        "apercu": [{"client": g.client, "annee": g.annee, "expertise": g.expertise, "issue": g.issue,
+                    "volume": g.volume, "n_tranches": len(g.tranches), "taux_volume": g.taux_volume,
+                    "anomalies": [a.texte for a in g.anomalies]} for g in grilles[:12]],
+        "n_anomalies": sum(len(g.anomalies) for g in grilles),
+        "n_exclues": sum(1 for g in grilles if g.exclue),
+        "etat": _etat_tarif()}))
+
+
+@app.post("/api/tarif/donnees/activer")
+async def activer_tarif(request: Request) -> JSONResponse:
+    corps = await request.json()
+    fichier = Path(str(corps.get("fichier") or "")).name
+    chemin = tarification.DOSSIER / fichier
+    if not fichier or not chemin.exists():
+        raise HTTPException(status_code=404, detail="Choisir un fichier présent dans data/tarification/.")
+    onglet = corps.get("onglet") or None
+    # On valide AVANT d’écrire : un branchement qui casse n’est jamais enregistré.
+    try:
+        grilles, _ = tarification.lire_classeur(chemin, onglet)
+    except tarification.ClasseurInvalide as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    tarification.ecrire_branchement({"fichier": fichier, "onglet": onglet, "actif": True,
+                                     "active_le": dt.datetime.now().isoformat(timespec="minutes")})
+    TARIF.recharger()
+    return JSONResponse(_propre({"etat": _etat_tarif(), "n_offres": len(grilles)}))
+
+
+@app.post("/api/tarif/donnees/demo")
+def tarif_demo() -> JSONResponse:
+    b = tarification.lire_branchement() or {}
+    b["actif"] = False
+    tarification.ecrire_branchement(b)
+    TARIF.recharger()
+    return JSONResponse(_propre({"etat": _etat_tarif()}))
 
 
 # =============================================================================
