@@ -20,6 +20,9 @@ python server.py
 L’application s’ouvre sur **http://localhost:8000**. Port occupé ?
 `uvicorn server:app --port 8080`.
 
+Sous Windows, **`demarrer.bat`** fait les deux d’un double-clic : il installe
+les dépendances au premier lancement, démarre le serveur et ouvre le navigateur.
+
 Elle démarre sur un jeu de **données de démonstration** au format du classeur
 du pôle (environ 1 700 questionnaires, 2014 → aujourd’hui). Rien à configurer
 pour la découvrir.
