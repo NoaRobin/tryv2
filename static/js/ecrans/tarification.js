@@ -1,20 +1,25 @@
 // tarification.js — le simulateur de prix des appels d'offres.
 //
-// Une question : pour ce mandat, quel prix proposer, et comment se situe-t-il
-// par rapport à ce que le pôle a déjà fait ? La grille se modifie en place ;
-// tout le reste — phrase d'ouverture, fourchettes, courbe, relief — suit la
-// frappe. Le calcul est celui de tarification.py (static/js/tarif.js).
+// Les questions d'un gérant avant de chiffrer un mandat, dans l'ordre où il
+// se les pose : quelle grille (le tableau), comment le client la paie
+// (l'escalier), où elle se situe (le marché), quelle chance de gagner à ce
+// prix, ce que le mandat rapporte sur sa durée, et comment céder un effort au
+// moindre coût. Tout suit la frappe. Calcul : static/js/tarif.js (miroir de
+// tarification.py) et static/js/simulateurs.js.
 
 import { h, vider, lien, entier, message, chargement, annoncer } from '../ui.js';
 import * as api from '../api.js';
 import * as T from '../tarif.js';
-import { courbeTarif, jaugeMarche, bandeTranche, legendeIssues, fmtTaux, fmtPb, fmtFrais, fmtEcartFrais, fmtM,
-  fmtCentile, plafondJoli } from '../graphes-tarif.js';
+import * as SIM from '../simulateurs.js';
+import { creerEscalier } from '../escalier.js';
+import { courbeTarif, jaugeMarche, bandeTranche, legendeIssues, courbeGain, courbeValeur, fmtEcartPct,
+  fmtTaux, fmtPb, fmtFrais, fmtEcartFrais, fmtM, fmtCentile, plafondJoli } from '../graphes-tarif.js';
 import { NBSP, decimal, dateCourte } from '../format.js';
 
-const MEMOIRE = 'tarif.simulateur.v1';
+const MEMOIRE = 'tarif.simulateur.v2';
 const TAILLES_REFERENCE = [25, 50, 100, 150, 250, 500];
 const ISSUES = [['Gagné', 'Gagnées'], ['Perdu', 'Perdues'], ['En cours', 'En cours']];
+const MOINS = '−';
 
 let S = null;            // l'état du simulateur
 let R = {};              // les zones qui se mettent à jour
@@ -55,6 +60,11 @@ function etatInitial(donnees) {
     origine: 'la grille type de la présentation (page 2)',
     filtres: { de: annees[0] ?? null, a: annees[annees.length - 1] ?? null,
       issues: new Set(donnees.issues), natures: new Set(donnees.natures) },
+    // Les hypothèses du mandat : durée et croissance de l'encours (marchés + flux).
+    horizon: 5, croissance: 0.03,
+    concession: 0.01,          // l'effort demandé par le client, en points de taux (0,01 = 1 pb)
+    sensibilite: 'auto',
+    comparerOuvert: false,
     toutes: false,
     tri: { cle: 'annee', sens: -1 },
     mesure: 'mediane',
@@ -68,6 +78,10 @@ function etatInitial(donnees) {
       s.encours = Number(m.encours) > 0 ? Number(m.encours) : s.encours;
       s.expertise = m.expertise;
       s.origine = m.origine || 'votre dernière simulation';
+      if (Number(m.horizon) >= 1 && Number(m.horizon) <= 10) s.horizon = Number(m.horizon);
+      if (Number.isFinite(Number(m.croissance))) s.croissance = Number(m.croissance);
+      if (Number(m.concession) > 0) s.concession = Number(m.concession);
+      if (m.sensibilite && (m.sensibilite === 'auto' || SIM.SENSIBILITES[m.sensibilite])) s.sensibilite = m.sensibilite;
     }
   } catch (e) { /* stockage indisponible : on repart de la grille type */ }
   s.lignes = T.normaliser(s.lignes);
@@ -76,25 +90,39 @@ function etatInitial(donnees) {
 
 function memoriser() {
   try {
-    localStorage.setItem(MEMOIRE, JSON.stringify({ lignes: S.lignes, encours: S.encours,
-      expertise: S.expertise, origine: S.origine }));
+    localStorage.setItem(MEMOIRE, JSON.stringify({ lignes: S.lignes, encours: S.encours, expertise: S.expertise,
+      origine: S.origine, horizon: S.horizon, croissance: S.croissance, concession: S.concession, sensibilite: S.sensibilite }));
   } catch (e) { /* stockage indisponible : sans conséquence */ }
 }
 
 /* ------------------------------------------------------------- calculs --- */
 const libelleExpertise = (cle) => (S.donnees.expertises.find(e => e.cle === cle) || {}).libelle || cle;
 
-function passe(o) {
+function passeHorsIssue(o) {
   const f = S.filtres;
   if (o.annee !== null && o.annee !== undefined && f.de !== null && (o.annee < f.de || o.annee > f.a)) return false;
-  if (!f.issues.has(o.issue)) return false;
   if (S.donnees.natures.length > 1 && o.nature && !f.natures.has(o.nature)) return false;
   return true;
 }
+const passe = (o) => passeHorsIssue(o) && S.filtres.issues.has(o.issue);
 
 function eligibles(cle = S.expertise) {
   return S.donnees.offres.filter(o => !o.exclue && o.expertise_cle === cle && passe(o));
 }
+
+// Les décisions passées ne dépendent que des filtres : calculées une fois par réglage.
+let cacheDecisions = { cle: null, obs: [] };
+function decisionsPassees() {
+  const cle = JSON.stringify([S.filtres.de, S.filtres.a, [...S.filtres.natures].sort(), S.donnees.offres.length]);
+  if (cacheDecisions.cle !== cle) {
+    const obs = SIM.decisions(S.donnees.offres.filter(passeHorsIssue));
+    for (const d of obs) d.titre = `${d.offre.libelle} · ${d.offre.expertise} · ${d.offre.annee ?? '—'}`;
+    cacheDecisions = { cle, obs };
+  }
+  return cacheDecisions.obs;
+}
+
+const hypotheses = () => ({ horizon: S.horizon, croissance: S.croissance });
 
 function calculer() {
   const grille = T.normaliser(S.lignes);
@@ -106,7 +134,25 @@ function calculer() {
   const centile = T.centile(marche.valeurs.map(x => x.v), tm);
   const comparaisons = T.tranchesDeComparaison(grille, A)
     .map(c => ({ ...c, resume: T.fourchetteTranche(elig, c.bas, c.haut) }));
-  return { grille, elig, A, tm, fr, marche, centile, comparaisons };
+  const projection = SIM.projeter(grille, A, hypotheses());
+  const im = SIM.trancheMarginale(grille, A);
+
+  // La chance de gagner : en automatique, les données si elles parlent, sinon une hypothèse moyenne, dite.
+  const obs = decisionsPassees();
+  let gain = null;
+  if (obs.length >= 5 && marche.n && marche.mediane > 0 && tm > 0) {
+    let modele = SIM.modeleGain(obs, S.sensibilite === 'auto' ? 'donnees' : S.sensibilite);
+    let repli = false;
+    if (S.sensibilite === 'auto' && !modele.demontre) { modele = SIM.modeleGain(obs, 'moyenne'); repli = true; }
+    const xActuel = Math.log(tm / marche.mediane);
+    const courbe = SIM.revenuEspere(modele, { xActuel, valeurActuelle: projection.total,
+      domaine: [Math.log(0.5), Math.log(2)] });
+    const plat = modele.b === 0;
+    gain = { obs, modele, repli, xActuel, courbe, plat, mediane: marche.mediane,
+      tauxDe: (x) => marche.mediane * Math.exp(x) };
+  }
+  const negociation = SIM.leviers(grille, A, S.concession, hypotheses());
+  return { grille, elig, A, tm, fr, marche, centile, comparaisons, projection, im, gain, obs, negociation };
 }
 
 /** Le centile d'une offre parmi ses pairs de l'expertise, à son propre encours. */
@@ -142,9 +188,68 @@ function ecart(e) {
   return { valeur: fmtPb(Math.abs(e)).replace('+', ''), sens: e < 0 ? 'sous' : 'au-dessus de' };
 }
 
+const pluriel2 = (n, mot, pluriel = null) => `${entier(n)}${NBSP}${n > 1 ? (pluriel || `${mot}s`) : mot}`;
+const capitale = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+const pct = (p) => `${Math.round(p * 100)}${NBSP}%`;
+const pctSigne = (f) => { const v = Math.round(f * 1000) / 10; return `${v > 0 ? '+' : (v < 0 ? MOINS : '')}${decimal(Math.abs(v), Math.abs(v) < 10 && v % 1 ? 1 : 0)}${NBSP}%`; };
+
+/** « moins chère que 71 % des offres » — la phrase complète se lit seule. */
+function cherete(c) {
+  if (!Number.isFinite(c)) return 'sans comparaison possible avec les offres';
+  if (c >= 99.5) return 'plus chère que toutes les offres';
+  if (c <= 0.5) return 'moins chère que toutes les offres';
+  return c >= 50 ? `plus chère que ${Math.round(c)}${NBSP}% des offres` : `moins chère que ${Math.round(100 - c)}${NBSP}% des offres`;
+}
+
+/** Le rang court d'un tableau : « 29e centile », ou les deux extrêmes en mots. */
+function positionCourte(c) {
+  if (!Number.isFinite(c)) return '—';
+  if (c >= 99.5) return 'la plus chère';
+  if (c <= 0.5) return 'la moins chère';
+  return fmtCentile(c);
+}
+
+/* -------------------------------------------------------- saisie des nombres --- */
+// Les cases acceptent « 0,12 » comme « 0.12 » : on écrit en français, on lit les deux.
+const lireNombre = (texte) => {
+  const t = String(texte).trim().replace(/\s|%|M€/g, '').replace(',', '.').replace(MOINS, '-');
+  return t === '' ? NaN : Number(t);
+};
+const ecrireNombre = (v, decimales = 3) => {
+  if (!Number.isFinite(v)) return '';
+  const r = Math.round(v * 10 ** decimales) / 10 ** decimales;
+  return String(r).replace('.', ',').replace('-', MOINS);
+};
+
+/** Une case numérique : saisie libre, flèches pour le pas, validation visible, jamais bloquante. */
+function caseNombre({ valeur, pas, decimales, min = -Infinity, max = Infinity, largeur, etiquette, surValeur }) {
+  const champ = h('input.saisie', { type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false',
+    value: ecrireNombre(valeur, decimales), 'aria-label': etiquette, style: largeur ? { width: largeur } : null });
+  const accepter = (v) => {
+    const ok = Number.isFinite(v) && v >= min && v <= max;
+    champ.setAttribute('aria-invalid', String(!ok));
+    if (ok) surValeur(v);
+    return ok;
+  };
+  champ.addEventListener('input', () => accepter(lireNombre(champ.value)));
+  champ.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const courant = Number.isFinite(lireNombre(champ.value)) ? lireNombre(champ.value) : valeur;
+      const v = Math.min(max, Math.max(min, Math.round((courant + (e.key === 'ArrowUp' ? 1 : -1) * pas * (e.shiftKey ? 10 : 1)) / pas) * pas));
+      champ.value = ecrireNombre(v, decimales);
+      accepter(v);
+    } else if (e.key === 'Enter') { e.preventDefault(); champ.blur(); }
+  });
+  champ.addEventListener('change', () => champ.dispatchEvent(new CustomEvent('reformer')));
+  champ.poser = (v) => { valeur = v; if (document.activeElement !== champ) { champ.value = ecrireNombre(v, decimales); champ.setAttribute('aria-invalid', 'false'); } };
+  champ.addEventListener('blur', () => { champ.value = ecrireNombre(valeur, decimales); champ.setAttribute('aria-invalid', 'false'); });
+  return champ;
+}
+
+/* ============================================================ construction === */
 function construire(ecran, ctx) {
   R.ctx = ctx;
-  // L'ouverture : la phrase calculée, et les chiffres qui comptent.
   const ouverture = h('div.lecture.ouverture');
   R.lede = h('p.lede');
   R.matin = h('p.matin');
@@ -155,40 +260,64 @@ function construire(ecran, ctx) {
 
   ecran.append(barreReglages());
   ecran.append(blocGrille());
+  ecran.append(blocEscalier());
   ecran.append(blocMarche());
-  ecran.append(blocCourbe());
-  ecran.append(blocRelief());
+  ecran.append(blocGain());
+  ecran.append(blocValeur());
+  ecran.append(blocNegocier());
   ecran.append(blocExpertises());
   ecran.append(blocOffres());
   ecran.append(blocClasseur());
 }
 
 /* ----------------------------------------------------- barre de réglages --- */
+function poserEncours(v, source = null) {
+  if (!(v > 0)) return;
+  S.encours = Math.round(v);
+  if (source !== R.champEncours) R.champEncours.poser(S.encours);
+  if (source !== R.curseurEncours) R.curseurEncours.value = versCurseur(S.encours);
+  majPlanifiee();
+}
+
 function barreReglages() {
   const barre = h('div.reglages', { role: 'region', 'aria-label': 'Réglages du simulateur' });
   R.tuiles = h('div.tuiles', { role: 'group', 'aria-label': 'Expertise' });
   barre.append(R.tuiles);
 
   const ligne = h('div.reglages__ligne');
-  // La taille du mandat : saisie libre, et un curseur logarithmique de 5 à 1 000 M€.
-  const champ = h('input.saisie.saisie--encours', { type: 'number', min: 1, max: 100000, step: 5,
-    value: S.encours, 'aria-label': 'Taille du mandat en millions d’euros' });
-  const curseur = h('input.curseur', { type: 'range', min: 0, max: 1000, step: 1,
-    'aria-label': 'Taille du mandat', value: versCurseur(S.encours) });
-  const poser = (v, source) => {
-    if (!(v > 0)) return;
-    S.encours = Math.round(v);
-    if (source !== champ) champ.value = S.encours;
-    if (source !== curseur) curseur.value = versCurseur(S.encours);
-    maj();
-  };
-  champ.addEventListener('input', () => poser(Number(champ.value), champ));
-  curseur.addEventListener('input', () => poser(deCurseur(Number(curseur.value)), curseur));
-  R.champEncours = champ; R.curseurEncours = curseur;
-  ligne.append(h('label.reglage', {}, h('span.reglage__c', { texte: 'Taille du mandat' }),
-    h('span.reglage__v', {}, champ, h('span.unite', { texte: 'M€' }), curseur)));
+  // Le mandat : sa taille (saisie ou curseur logarithmique), sa durée, sa croissance.
+  R.champEncours = caseNombre({ valeur: S.encours, pas: 5, decimales: 0, min: 1, max: 100000, largeur: '76px',
+    etiquette: 'Taille du mandat en millions d’euros', surValeur: (v) => poserEncours(v, R.champEncours) });
+  R.curseurEncours = h('input.curseur', { type: 'range', min: 0, max: 1000, step: 1, 'aria-label': 'Taille du mandat',
+    value: versCurseur(S.encours) });
+  R.curseurEncours.addEventListener('input', () => poserEncours(deCurseur(Number(R.curseurEncours.value)), R.curseurEncours));
+  ligne.append(h('label.reglage', {}, h('span.reglage__c', { texte: 'Mandat' }),
+    h('span.reglage__v', {}, R.champEncours, h('span.unite', { texte: 'M€' }), R.curseurEncours)));
 
-  // Les offres comparées : années, issue, nature du client.
+  const duree = h('select.saisie', { 'aria-label': 'Durée du mandat en années',
+    onchange: (e) => { S.horizon = Number(e.target.value); maj(); } });
+  for (let n = 1; n <= 10; n++) duree.append(h('option', { value: n, texte: `${n} an${n > 1 ? 's' : ''}`, selected: n === S.horizon ? '' : null }));
+  ligne.append(h('label.reglage', {}, h('span.reglage__c', { texte: 'Durée' }), h('span.reglage__v', {}, duree)));
+
+  R.champCroissance = caseNombre({ valeur: S.croissance * 100, pas: 0.5, decimales: 1, min: -30, max: 50, largeur: '58px',
+    etiquette: 'Croissance annuelle de l’encours en pour cent', surValeur: (v) => { S.croissance = v / 100; majPlanifiee(); } });
+  ligne.append(h('label.reglage', { title: 'Marchés et flux nets confondus : une hypothèse, pas une prévision' },
+    h('span.reglage__c', { texte: 'Croissance' }),
+    h('span.reglage__v', {}, R.champCroissance, h('span.unite', { texte: '% par an' }))));
+  barre.append(ligne);
+
+  // Les offres comparées : un résumé qui s'ouvre sur ses filtres.
+  R.resumeComparer = h('button.lien-sobre.comparer__resume', { type: 'button', 'aria-expanded': String(S.comparerOuvert),
+    onclick: () => { S.comparerOuvert = !S.comparerOuvert; majComparer(); } });
+  R.filtres = h('div.reglages__ligne.comparer__filtres');
+  barre.append(h('div.comparer', {}, R.resumeComparer, R.filtres));
+  peindreFiltres();
+  return barre;
+}
+
+function peindreFiltres() {
+  const ligne = R.filtres;
+  vider(ligne);
   const annees = S.donnees.annees;
   if (annees.length) {
     const sel = (valeur, surChange) => {
@@ -217,7 +346,7 @@ function barreReglages() {
   if (S.donnees.natures.length > 1) {
     const n = h('span.reglage__v');
     for (const nat of S.donnees.natures) {
-      const b = h('button.puce-filtre', { type: 'button', 'aria-pressed': 'true', texte: nat,
+      const b = h('button.puce-filtre', { type: 'button', 'aria-pressed': String(S.filtres.natures.has(nat)), texte: nat,
         onclick: () => {
           if (S.filtres.natures.has(nat) && S.filtres.natures.size === 1) return;
           if (S.filtres.natures.has(nat)) S.filtres.natures.delete(nat); else S.filtres.natures.add(nat);
@@ -228,8 +357,16 @@ function barreReglages() {
     }
     ligne.append(h('span.reglage', {}, h('span.reglage__c', { texte: 'Client' }), n));
   }
-  barre.append(ligne);
-  return barre;
+}
+
+function majComparer() {
+  const n = eligibles().length;
+  const issues = S.filtres.issues.size === S.donnees.issues.length ? 'toutes issues'
+    : [...S.filtres.issues].map(i => i.toLowerCase()).join(', ');
+  const annees = S.filtres.de !== null ? (S.filtres.de === S.filtres.a ? `${S.filtres.de}` : `${S.filtres.de} → ${S.filtres.a}`) : '';
+  R.resumeComparer.textContent = `Comparé à ${pluriel2(n, 'offre')} ${libelleExpertise(S.expertise)} · ${[annees, issues].filter(Boolean).join(' · ')} ${S.comparerOuvert ? '▴' : '▾'}`;
+  R.resumeComparer.setAttribute('aria-expanded', String(S.comparerOuvert));
+  R.filtres.hidden = !S.comparerOuvert;
 }
 
 const versCurseur = (v) => Math.round((Math.log(Math.max(5, Math.min(1000, v)) / 5) / Math.log(200)) * 1000);
@@ -276,22 +413,25 @@ function blocGrille() {
     lien('Exporter (CSV)', exporterGrille)));
 
   R.tableGrille = h('table.grille-tarif');
+  R.enteteClient = h('th', { texte: 'Chez ce client' });
+  R.enteteFrais = h('th.num', { texte: 'Frais par an' });
   R.tableGrille.append(h('thead', {}, h('tr', {},
-    h('th', { texte: 'Tranche' }), h('th.num', { texte: 'De (M€)' }), h('th.num', { texte: 'À (M€)' }),
-    h('th.num', { texte: 'Taux (%)' }), h('th', { texte: 'Déjà pratiqué sur la tranche' }),
-    R.enteteFrais = h('th.num', { texte: 'Frais' }), h('th', { 'aria-label': 'Actions' }))));
+    h('th', { texte: 'Tranche' }), h('th', { texte: 'Part d’encours (M€)' }), h('th.num', { texte: 'Taux (%)' }),
+    R.enteteClient, R.enteteFrais, h('th', { texte: 'Face au marché, sur la même part' }), h('th', { 'aria-label': 'Actions' }))));
   R.corpsGrille = h('tbody');
   R.tableGrille.append(R.corpsGrille);
   R.piedGrille = h('tfoot');
   R.tableGrille.append(R.piedGrille);
+  R.lectureGrille = h('p.lecture-grille');
   R.origine = h('p.note.grille-origine');
 
-  return bloc('grille', 'La grille', [outils, h('div.tableau', {}, R.tableGrille), R.origine], margeTexte('Lecture',
-    'Chaque taux ne s’applique qu’à la <b>part de l’encours</b> qui tombe dans sa tranche, comme un barème progressif : c’est ainsi que la présentation obtient 0,093 % à 150 M€.',
-    'La <b>dernière tranche</b> s’applique au-delà de son seuil.',
-    '<b>Déjà pratiqué</b> : ce que les offres passées de l’expertise facturaient sur la même part d’encours — trait de la médiane, bande du plus bas au plus haut, point pour votre taux. Changer les bornes d’une tranche recalcule ce marché.',
-    'Flèches haut et bas dans une case : ±0,005 point de taux, ±5 M€ de borne.'));
+  return bloc('grille', 'La grille', [outils, h('div.tableau', {}, R.tableGrille), R.lectureGrille, R.origine], margeTexte('Lecture',
+    'Chaque taux ne s’applique qu’à la <b>part de l’encours</b> qui tombe dans sa tranche, comme un barème progressif ; la dernière tranche vaut au-delà de son seuil.',
+    '<b>Chez ce client</b> : ce que son encours met dans chaque tranche. <b>Face au marché</b> : ce que les offres passées de l’expertise facturaient sur la même part — la bande va du plus bas au plus haut, le trait est la médiane, le point est votre taux.',
+    'Les cases acceptent 0,12 comme 0.12. Flèches haut et bas : ±0,005 point de taux ou ±5 M€ (Maj : ×10). ✂ coupe une tranche en deux.'), { large: true });
 }
+
+function modifiee() { S.origine = `${S.origine.replace(/, modifiée$/, '')}, modifiée`; }
 
 function charger(tranches, origine) {
   S.lignes = T.normaliser(tranches.map(t => ({ ...t })));
@@ -303,9 +443,19 @@ function charger(tranches, origine) {
 
 function partirDe(o) {
   S.expertise = o.expertise_cle;
-  if (o.volume) { S.encours = Math.round(o.volume); R.champEncours.value = S.encours; R.curseurEncours.value = versCurseur(S.encours); }
+  if (o.volume) { S.encours = Math.round(o.volume); R.champEncours.poser(S.encours); R.curseurEncours.value = versCurseur(S.encours); }
   charger(o.tranches, `l’offre ${o.libelle} ${o.annee ?? ''} (${o.issue.toLowerCase()}), à son encours de ${fmtM(o.volume)}`.replace(/\s+/g, ' '));
   maj({ offres: true });
+}
+
+/** Déplace le seuil entre les tranches i et i+1, sans jamais croiser ses voisins. */
+function poserSeuil(i, v) {
+  const bas = S.lignes[i].minimum + 1;
+  const haut = i + 2 < S.lignes.length ? S.lignes[i + 1].maximum - 1 : Infinity;
+  if (!Number.isFinite(v) || v < bas || v > haut) return false;
+  S.lignes[i].maximum = v; S.lignes[i + 1].minimum = v;
+  modifiee();
+  return true;
 }
 
 /** La grille entière se redessine (structure) ; la frappe ne met à jour que les calculs. */
@@ -315,57 +465,57 @@ function peindreGrille() {
     const derniere = i === S.lignes.length - 1;
     const tr = h('tr');
     tr.append(h('td.grille-tarif__nom', { texte: `T${i + 1}` }));
-    tr.append(h('td.num.attenue', { texte: entier(t.minimum) }));
+    const part = h('td.grille-tarif__part');
+    const de = h('span.num', { texte: entier(t.minimum) });
     let champMax = null;
     if (derniere) {
-      tr.append(h('td.num.attenue', { texte: 'et au-delà' }));
+      part.append(de, h('span.attenue', { texte: `${NBSP}et au-delà` }));
     } else {
-      champMax = h('input.saisie.saisie--borne', { type: 'number', step: 5, min: 0, value: t.maximum,
-        'aria-label': `Plafond de la tranche ${i + 1} en M€` });
-      champMax.addEventListener('input', () => {
-        const v = Number(champMax.value);
-        const bas = S.lignes[i].minimum;
-        const haut = i + 2 < S.lignes.length ? S.lignes[i + 1].maximum : Infinity;
-        const ok = Number.isFinite(v) && v > bas && v < haut;
-        champMax.setAttribute('aria-invalid', String(!ok));
-        if (!ok) return;
-        S.lignes[i].maximum = v; S.lignes[i + 1].minimum = v;
-        R.lignesGrille[i + 1].de.textContent = entier(v);
-        maj({ source: 'grille' });
-      });
-      champMax.addEventListener('change', () => { champMax.value = S.lignes[i].maximum; champMax.setAttribute('aria-invalid', 'false'); });
-      tr.append(h('td.num', {}, champMax));
+      champMax = caseNombre({ valeur: t.maximum, pas: 5, decimales: 0, min: 0, largeur: '64px',
+        etiquette: `Seuil haut de la tranche ${i + 1} en M€`,
+        surValeur: (v) => { if (poserSeuil(i, v)) { R.lignesGrille[i + 1].de.textContent = entier(v); maj({ source: 'grille' }); } else champMax.setAttribute('aria-invalid', 'true'); } });
+      part.append(de, h('span.fleche-part', { texte: ' → ' }), champMax);
     }
-    const champTaux = h('input.saisie.saisie--taux', { type: 'number', step: 0.005, min: 0, max: 5,
-      value: t.taux, 'aria-label': `Taux de la tranche ${i + 1} en pour cent` });
-    champTaux.addEventListener('input', () => {
-      const v = Number(champTaux.value);
-      const ok = champTaux.value !== '' && Number.isFinite(v) && v >= 0 && v <= 5;
-      champTaux.setAttribute('aria-invalid', String(!ok));
-      if (!ok) return;
-      S.lignes[i].taux = v;
-      maj({ source: 'grille' });
-    });
-    champTaux.addEventListener('change', () => { champTaux.value = S.lignes[i].taux; champTaux.setAttribute('aria-invalid', 'false'); });
+    tr.append(part);
+    const champTaux = caseNombre({ valeur: t.taux, pas: 0.005, decimales: 3, min: 0, max: 5, largeur: '64px',
+      etiquette: `Taux de la tranche ${i + 1} en pour cent`,
+      surValeur: (v) => { S.lignes[i].taux = v; modifiee(); maj({ source: 'grille' }); } });
     tr.append(h('td.num', {}, champTaux));
+    const client = h('td.grille-tarif__client');
+    const frais = h('td.num.grille-tarif__frais');
     const marche = h('td.grille-tarif__marche');
-    tr.append(marche);
-    const frais = h('td.num');
-    tr.append(frais);
+    tr.append(client, frais, marche);
     const actions = h('td.grille-tarif__actions');
+    actions.append(h('button.croix', { type: 'button', 'aria-label': `Couper la tranche ${i + 1} en deux`, title: 'Couper en deux', texte: '✂',
+      onclick: () => couperTranche(i) }));
     if (S.lignes.length > 1) {
-      actions.append(h('button.croix', { type: 'button', 'aria-label': `Retirer la tranche ${i + 1}`, texte: '×',
+      actions.append(h('button.croix', { type: 'button', 'aria-label': `Retirer la tranche ${i + 1}`, title: 'Retirer (la tranche voisine l’absorbe)', texte: '×',
         onclick: () => {
           S.lignes.splice(i, 1);
           S.lignes = T.normaliser(S.lignes);
-          S.origine = `${S.origine.replace(/, modifiée$/, '')}, modifiée`;
+          modifiee();
           peindreGrille(); maj();
         } }));
     }
     tr.append(actions);
     R.corpsGrille.append(tr);
-    return { tr, de: tr.children[1], champMax, champTaux, marche, frais };
+    return { tr, de, champMax, champTaux, client, marche, frais };
   });
+}
+
+/** Coupe une tranche en deux au milieu (la dernière, au double de son seuil) ; même taux des deux côtés. */
+function couperTranche(i) {
+  const t = S.lignes[i];
+  const derniere = i === S.lignes.length - 1;
+  const milieu = derniere ? Math.max(t.minimum * 2, t.minimum + 50) : (t.minimum + t.maximum) / 2;
+  const seuil = Math.round(milieu / 5) * 5;
+  if (seuil <= t.minimum || (!derniere && seuil >= t.maximum)) { annoncer('Tranche trop étroite pour être coupée.'); return; }
+  S.lignes.splice(i + 1, 0, { minimum: seuil, maximum: derniere ? null : t.maximum, taux: t.taux });
+  S.lignes[i].maximum = seuil;
+  S.lignes = T.normaliser(S.lignes);
+  modifiee();
+  peindreGrille(); maj();
+  annoncer(`Tranche ${i + 1} coupée à ${seuil} M€.`);
 }
 
 function ajouterTranche() {
@@ -375,52 +525,69 @@ function ajouterTranche() {
   der.maximum = seuil;
   S.lignes.push({ minimum: seuil, maximum: null, taux: marche.n ? T.arrondiBp(marche.mediane) : der.taux });
   S.lignes = T.normaliser(S.lignes);
+  modifiee();
   peindreGrille(); maj();
   annoncer(`Tranche ajoutée au-delà de ${seuil} M€.`);
+}
+
+/** Où tombe un taux dans la fourchette d'une tranche, en mots : jamais par la couleur seule. */
+function verdict(r, taux) {
+  if (!r.n) return null;
+  const e = 0.0005;
+  if (taux < r.min - e) return 'sous le plus bas';
+  if (taux > r.max + e) return 'au-dessus du plus haut';
+  if (Math.abs(taux - r.mediane) <= e) return 'à la médiane';
+  return taux < r.mediane ? 'sous la médiane' : 'au-dessus de la médiane';
 }
 
 function majGrille(D) {
   const domaine = plafondJoli(Math.max(...D.comparaisons.map(c => (c.resume.n ? c.resume.max : 0)),
     ...D.grille.map(t => t.taux), 0.05) * 1.08, 4);
-  R.enteteFrais.textContent = `Frais à ${entier(D.A)} M€`;
+  R.enteteClient.textContent = `Chez ce client (${entier(D.A)} M€)`;
   D.comparaisons.forEach((c, i) => {
     const l = R.lignesGrille[i];
     if (!l) return;
     const t = D.grille[i];
+    l.de.textContent = entier(t.minimum);
+    if (l.champMax) l.champMax.poser(t.maximum);
+    l.champTaux.poser(t.taux);
+    // Ce que l'encours du client met dans la tranche : une barre remplie à proportion de la tranche.
+    const derniere = i === D.grille.length - 1;
+    const part = Math.max(0, Math.min(D.A, derniere ? Infinity : t.maximum) - t.minimum);
+    const largeur = derniere ? null : t.maximum - t.minimum;
+    const remplissage = derniere ? (part > 0 ? 1 : 0) : Math.min(1, part / largeur);
+    vider(l.client).append(
+      h('span.part-client', { 'aria-hidden': 'true' }, h('i', { style: { width: `${Math.round(remplissage * 100)}%` } })),
+      h('span.part-client__v', { texte: part > 0 ? `${entier(part)} M€${!derniere && remplissage >= 1 ? ' · pleine' : ''}` : 'non atteinte' }));
+    l.client.classList.toggle('attenue', !(part > 0));
+    const f = part * t.taux / 100;
+    vider(l.frais).append(h('b', { texte: part > 0 ? fmtFrais(f) : '—' }),
+      ...(part > 0 && D.fr > 0 ? [h('span.cellule-sous', { texte: `${Math.round((f / D.fr) * 100)}${NBSP}% du total` })] : []));
     vider(l.marche);
     if (c.resume.n) {
       l.marche.append(bandeTranche(c.resume, t.taux, domaine));
-      const txt = h('span.grille-tarif__fourchette.cellule-sous', {},
-        `${fmtTaux(c.resume.min, { unite: false })}–${fmtTaux(c.resume.max, { unite: false })}`,
-        h('span.attenue', { texte: ` · méd. ${fmtTaux(c.resume.mediane, { unite: false })}` }));
-      l.marche.append(txt);
-      const ecartMediane = t.taux - c.resume.mediane;
-      if (Math.abs(ecartMediane) >= 0.0005) {
+      l.marche.append(h('span.cellule-sous', {}, h('b', { texte: verdict(c.resume, t.taux) }),
+        ` · ${fmtTaux(c.resume.min, { unite: false })}–${fmtTaux(c.resume.max, { unite: false })}, méd. ${fmtTaux(c.resume.mediane, { unite: false })}`));
+      if (Math.abs(t.taux - c.resume.mediane) >= 0.0005) {
         l.marche.append(h('button.lien-sobre.lien-sobre--mini', { type: 'button',
-          title: `Appliquer la médiane pratiquée sur cette tranche (${fmtTaux(c.resume.mediane)})`,
-          texte: '→ médiane',
-          onclick: () => {
-            S.lignes[i].taux = T.arrondiBp(c.resume.mediane);
-            l.champTaux.value = S.lignes[i].taux;
-            S.origine = `${S.origine.replace(/, modifiée$/, '')}, modifiée`;
-            maj();
-          } }));
+          title: `Appliquer la médiane pratiquée sur cette tranche (${fmtTaux(c.resume.mediane)})`, texte: '→ médiane',
+          onclick: () => { S.lignes[i].taux = T.arrondiBp(c.resume.mediane); modifiee(); maj(); } }));
       }
     } else {
       l.marche.append(h('span.attenue', { texte: 'aucune offre comparable' }));
     }
-    const part = Math.max(0, Math.min(D.A, c.ouverte ? Infinity : t.maximum) - t.minimum);
-    l.frais.textContent = part > 0 ? fmtFrais(part * t.taux / 100) : 'non atteinte';
-    l.frais.classList.toggle('attenue', !(part > 0));
   });
-  // Le total sous ses colonnes : le taux moyen sous les taux, les frais sous les frais.
   vider(R.piedGrille);
   R.piedGrille.append(h('tr', {},
-    h('td', { colspan: 3 }, h('button.lien-sobre', { type: 'button', texte: '+ Ajouter une tranche', onclick: ajouterTranche })),
+    h('td', { colspan: 2 }, h('button.lien-sobre', { type: 'button', texte: '+ Ajouter une tranche au-delà', onclick: ajouterTranche })),
     h('td.num.grille-tarif__total', {}, h('b', { texte: fmtTaux(D.tm) })),
-    h('td.grille-tarif__total.attenue', { texte: `taux moyen et frais à ${entier(D.A)} M€` }),
+    h('td.grille-tarif__total.attenue', { texte: 'taux moyen payé' }),
     h('td.num.grille-tarif__total', {}, h('b', { texte: fmtFrais(D.fr) })),
+    h('td.grille-tarif__total.attenue', { texte: `HT par an, pour ${entier(D.A)} M€` }),
     h('td')));
+  const is = SIM.trancheSuivante(D.grille, D.A);
+  R.lectureGrille.replaceChildren(`Le million suivant paie `, h('b', { texte: fmtTaux(D.grille[is].taux) }),
+    ` (T${is + 1}) : c’est le taux qui compte si le mandat grossit. Un encours doublé rapporterait ${pctSigne(SIM.elasticite(D.grille, D.A))} de frais.`);
   R.origine.textContent = `Grille partie de ${S.origine}. Les montants sont hors taxes.`;
   R.boutonReference.textContent = `La référence ${libelleExpertise(S.expertise)}`;
   vider(R.choixOffre);
@@ -462,16 +629,60 @@ async function copierGrille() {
   }
 }
 
-/* ============================================================ 02 marché === */
+/* ========================================================== 02 escalier === */
+function blocEscalier() {
+  R.phraseEscalier = h('p.prose.prose--bloc');
+  R.boutonGrandir = h('button.bouton.bouton--sobre.bouton--petit', { type: 'button', texte: '▶ Faire grandir le mandat',
+    onclick: () => {
+      if (R.escalier.enCourse()) { R.escalier.arreter(); return; }
+      R.boutonGrandir.textContent = '■ Arrêter';
+      R.escalier.grandir({ fin: () => { R.boutonGrandir.textContent = '▶ Faire grandir le mandat'; } });
+    } });
+  R.escalier = creerEscalier({
+    surEncours: (v) => poserEncours(v),
+    surTaux: (i, v) => { if (Math.abs(S.lignes[i].taux - v) < 1e-9) return; S.lignes[i].taux = v; modifiee(); majPlanifiee(); },
+    surSeuil: (i, v) => { if (S.lignes[i].maximum === v) return; if (poserSeuil(i, v)) majPlanifiee(); },
+  });
+  const legende = h('div.legende-tarif', {},
+    h('span.legende-tarif__item', {}, h('span.aplat.aplat--paye'), 'ce que paie le client'),
+    h('span.legende-tarif__item', {}, h('span.trait.trait--fort'), 'votre grille'),
+    h('span.legende-tarif__item', {}, h('span.trait.trait--tirets'), 'médiane du marché'),
+    h('span.legende-tarif__item', {}, h('span.aplat.aplat--clair'), 'marché, du plus bas au plus haut'),
+    h('span.legende-tarif__item', {}, h('span.trait.trait--pointille'), 'taux moyen'));
+  const commandes = h('div.figure-commandes', {}, legende, R.boutonGrandir);
+  return bloc('escalier', 'L’escalier des frais', [R.phraseEscalier, commandes, R.escalier.el], margeTexte('Lire l’escalier',
+    'Chaque <b>marche</b> est une tranche : sa largeur est la part d’encours qu’elle couvre, sa hauteur son taux. La <b>surface foncée</b>, à gauche du curseur, est ce que paie le client : largeur × hauteur, marche par marche.',
+    'Derrière chaque marche, la <b>bande grise</b> : ce que le marché facturait sur la même part d’encours. Le pointillé est le taux moyen — il descend à chaque marche franchie.',
+    '<b>Tout se tire</b> : le haut d’une marche change son taux, son bord déplace le seuil, le curseur change la taille du mandat. Au clavier : Tab puis les flèches.',
+    '« Faire grandir le mandat » fait courir l’encours de zéro à la droite de la figure : on voit la surface se remplir et le taux moyen baisser.'), { large: true });
+}
+
+function majEscalier(D) {
+  vider(R.phraseEscalier);
+  const morceaux = [];
+  D.grille.forEach((t, i) => {
+    const derniere = i === D.grille.length - 1;
+    const part = Math.max(0, Math.min(D.A, derniere ? Infinity : t.maximum) - t.minimum);
+    if (part > 0) morceaux.push(`${fmtFrais(part * t.taux / 100)} sur ${i === 0 ? 'ses' : 'les'} ${entier(part)} ${i === 0 ? 'premiers' : 'suivants'} M€`);
+  });
+  R.phraseEscalier.append(`À ${entier(D.A)} M€, le client paie `, h('b', { texte: `${fmtFrais(D.fr)} par an` }), ' ');
+  R.phraseEscalier.append(h('span.attenue', { texte: morceaux.length > 1 ? `: ${morceaux.join(', ')}.` : '.' }));
+  R.escalier.maj({ grille: D.grille, encours: D.A, marche: D.comparaisons.map(c => c.resume) });
+}
+
+/* ============================================================ 03 marché === */
 function blocMarche() {
   R.phraseMarche = h('p.prose.prose--bloc');
   R.zoneJauge = h('div');
   R.pointsMarche = h('p.note.repere-marche');
-  return bloc('marche', 'Le prix dans le marché', [R.phraseMarche, R.zoneJauge, legendeIssues(), R.pointsMarche],
-    margeTexte('Lecture',
-      'Chaque carré est une offre déjà faite, <b>appliquée à la taille de votre mandat</b> : le prix qu’elle aurait donné à ce client. Plein : gagnée. Creux : perdue. À moitié : en cours.',
-      'Bande claire : du plus bas au plus haut. Bande foncée : la moitié centrale des offres. Trait : la médiane.',
-      'Un clic sur un carré ouvre la fiche de l’offre.'));
+  R.zoneCourbe = h('div');
+  R.legendeCourbe = h('div.legende-tarif');
+  return bloc('marche', 'Face au marché', [R.phraseMarche, R.zoneJauge, legendeIssues(), R.pointsMarche,
+    h('div.sous-titre', { texte: 'À toutes les tailles de mandat' }), R.legendeCourbe, R.zoneCourbe],
+  margeTexte('Lecture',
+    'Chaque carré est une offre déjà faite, <b>appliquée à la taille de votre mandat</b> : le prix qu’elle aurait donné à ce client. Plein : gagnée. Creux : perdue. À moitié : en cours. Un clic ouvre sa fiche.',
+    'Bande claire : du plus bas au plus haut. Bande foncée : la moitié centrale. Trait : la médiane.',
+    'Dessous, la <b>dégressivité</b> : le taux moyen selon la taille, votre grille en trait épais contre la bande du marché. C’est la lecture des consultants, qui comparent les grilles à 50, 100, 250 ou 500 M€.'));
 }
 
 function majMarche(D) {
@@ -502,44 +713,13 @@ function majMarche(D) {
   }
   if (f.perdus.n) morceaux.push(`médiane des perdues ${fmtTaux(f.perdus.mediane)}`);
   R.pointsMarche.textContent = morceaux.length ? `${capitale(morceaux.join(' · '))}.` : '';
-}
 
-/** « moins chère que 71 % des offres » — la phrase complète se lit seule. */
-function cherete(c) {
-  if (!Number.isFinite(c)) return 'sans comparaison possible avec les offres';
-  if (c >= 99.5) return 'plus chère que toutes les offres';
-  if (c <= 0.5) return 'moins chère que toutes les offres';
-  return c >= 50 ? `plus chère que ${Math.round(c)}${NBSP}% des offres` : `moins chère que ${Math.round(100 - c)}${NBSP}% des offres`;
-}
-
-/** Le rang court d'un tableau : « 29e centile », ou les deux extrêmes en mots. */
-function positionCourte(c) {
-  if (!Number.isFinite(c)) return '—';
-  if (c >= 99.5) return 'la plus chère';
-  if (c <= 0.5) return 'la moins chère';
-  return fmtCentile(c);
-}
-const pluriel2 = (n, mot, pluriel = null) => `${entier(n)}${NBSP}${n > 1 ? (pluriel || `${mot}s`) : mot}`;
-const capitale = (t) => t.charAt(0).toUpperCase() + t.slice(1);
-
-/* ============================================================ 03 courbe === */
-function blocCourbe() {
-  R.zoneCourbe = h('div');
-  R.legendeCourbe = h('div.legende-tarif');
-  return bloc('courbe', 'La dégressivité', [R.legendeCourbe, R.zoneCourbe, legendeIssues()], margeTexte('Lecture',
-    'Le taux moyen payé selon la taille du mandat. <b>Trait épais</b> : votre grille. <b>Trait fin</b> : la médiane des offres de l’expertise ; en pointillé, leur moyenne, la mesure de la présentation d’origine.',
-    'Les bandes disent ce que la moyenne cache : du plus bas au plus haut, et la moitié centrale.',
-    'Chaque carré est une offre à son propre encours. Survolez la figure pour lire les valeurs à une taille donnée.',
-    'La dernière tranche s’appliquant au-delà de son seuil, la moyenne ne s’effondre plus vers zéro aux grandes tailles comme dans la version d’origine.'));
-}
-
-function majCourbe(D) {
   const pts = D.elig.filter(o => o.volume).map(o => ({ x: o.volume, y: o.taux_volume, issue: o.issue,
     titre: `${o.libelle} · ${o.annee ?? '—'}`, id: o.id }));
   const xMax = plafondJoli(Math.max(D.A * 1.8, ...pts.map(p => p.x * 1.1), 200), 5);
-  const params = { grille: D.grille, eligibles: D.elig, encours: D.A, xMax, points: pts,
-    libelleExpertise: libelleExpertise(S.expertise), surPoint: (p) => ouvrirOffre(p.id) };
-  if (!R.courbe) { R.courbe = courbeTarif(params); R.zoneCourbe.append(R.courbe.el); } else R.courbe.maj(params);
+  const pc = { grille: D.grille, eligibles: D.elig, encours: D.A, xMax, points: pts,
+    libelleExpertise: exp, surPoint: (p) => ouvrirOffre(p.id) };
+  if (!R.courbe) { R.courbe = courbeTarif(pc); R.zoneCourbe.append(R.courbe.el); } else R.courbe.maj(pc);
   vider(R.legendeCourbe);
   const item = (classe, texte) => h('span.legende-tarif__item', {}, h('span', { classe }), texte);
   R.legendeCourbe.append(item('trait trait--fort', 'Votre grille'), item('trait trait--moyen', 'Médiane'),
@@ -547,95 +727,218 @@ function majCourbe(D) {
     item('aplat aplat--fonce', 'Moitié centrale'));
 }
 
-/* ============================================================ 04 relief === */
-function blocRelief() {
-  R.phraseRelief = h('p.prose.prose--bloc');
-  R.hoteRelief = h('div.relief-hote');
-  const vues = h('div.relief-vues', { role: 'group', 'aria-label': 'Point de vue' });
-  for (const [cle, texte] of [['perspective', 'Perspective'], ['face', 'De face'], ['dessus', 'Vue de dessus']]) {
-    vues.append(h('button.puce-filtre', { type: 'button', 'aria-pressed': String(cle === 'perspective'), texte,
-      onclick: (e) => {
-        for (const b of vues.children) b.setAttribute('aria-pressed', String(b === e.currentTarget));
-        if (R.relief) R.relief.vue(cle);
-      } }));
+/* ======================================================= 04 chance de gain === */
+function blocGain() {
+  R.phraseGain = h('p.prose.prose--bloc');
+  R.noteGain = h('p.note.note-gain');
+  R.sensibilites = h('div.groupe-puces', { role: 'group', 'aria-label': 'Sensibilité au prix' });
+  R.actionGain = h('span.figure-commandes__droite');
+  R.zoneGain = h('div');
+  return bloc('gain', 'Le prix et la chance de gagner', [R.phraseGain, R.noteGain,
+    h('div.figure-commandes', {}, h('span.figure-commandes__gauche', {}, h('span.cle', { texte: 'Sensibilité au prix' }), R.sensibilites), R.actionGain),
+    R.zoneGain], R.margeGain = h('div.marge-gain'), { large: true });
+}
+
+function majGain(D) {
+  const g = D.gain;
+  vider(R.phraseGain); vider(R.noteGain); vider(R.actionGain); vider(R.sensibilites);
+  const marge = R.margeGain;
+  const choix = [['auto', 'Automatique'], ...Object.entries(SIM.SENSIBILITES).map(([k, v]) => [k, v.libelle])];
+  for (const [cle, texte] of choix) {
+    R.sensibilites.append(h('button.puce-filtre', { type: 'button', 'aria-pressed': String(S.sensibilite === cle), texte,
+      title: cle === 'auto' ? 'Vos décisions si elles montrent un effet du prix, sinon une sensibilité moyenne'
+        : (SIM.SENSIBILITES[cle].texte ? `Hypothèse : ${SIM.SENSIBILITES[cle].texte}` : 'Estimée sur vos décisions passées, sans hypothèse'),
+      onclick: () => { S.sensibilite = cle; maj(); } }));
   }
-  R.boutonBalayage = h('button.bouton.bouton--sobre.bouton--petit', { type: 'button', texte: '▶ Si le mandat grossit',
-    onclick: balayer });
-  R.etatBalayage = h('span.note');
-  R.variante = h('div.relief-variante', { hidden: true });
-  R.sensibilite = h('p.note.relief-lecture');
-  const commandes = h('div.relief-commandes', {}, vues, h('span.relief-commandes__droite', {}, R.etatBalayage, R.boutonBalayage));
-  // Le module 3D et Three.js ne se chargent qu'ici, à la demande.
-  import('../relief.js').then((m) => {
-    R.moduleRelief = m;
-    R.relief = m.creerRelief(R.hoteRelief, {
-      surApercu: majVariante,
-      surAppliquer: (remise, facteur) => {
-        charger(grilleAjustee(remise, facteur), `${S.origine.replace(/, ajustée.*$/, '')}, ajustée depuis le relief`);
-      },
-    });
-    majRelief(calculer());
-  }).catch((e) => { R.hoteRelief.append(message(`Le relief n’a pas pu se charger : ${e.message}`, { sobre: true })); });
-  return bloc('relief', 'Le relief du prix', [R.phraseRelief, commandes, R.hoteRelief, R.variante, R.sensibilite],
-    margeTexte('Lire le relief',
-      'Chaque point de la nappe est une <b>variante de votre grille</b> pour ce client. De gauche à droite : une remise ou une majoration de tous les taux. D’avant en arrière : les seuils des tranches divisés par deux ou doublés.',
-      '<b>Hauteur</b> : le taux moyen payé. <b>Couleur</b> : claire sous la plus basse des offres déjà faites à cette taille, foncée au-dessus de la plus haute ; c’est dans la fourchette qu’elle change.',
-      'Les lignes grises relient les variantes de <b>même prix</b> ; les lignes blanches cernées d’encre marquent le plus bas, la médiane et le plus haut déjà proposés.',
-      'Faites glisser pour tourner, molette pour s’approcher. Un clic sur la nappe choisit une variante ; « Appliquer » l’écrit dans la grille.'), { large: true });
-}
-
-function majRelief(D) {
-  vider(R.phraseRelief);
-  R.phraseRelief.append(`Pour un mandat de ${entier(D.A)} M€, quelle concession pèse le plus ? `);
-  R.phraseRelief.append(h('span.attenue', { texte: 'Plus la nappe monte, plus le client paie ; la pente dit quel levier compte.' }));
-  if (R.relief) R.relief.maj({ grille: D.grille, encours: D.A, eligibles: D.elig, libelle: libelleExpertise(S.expertise) });
-  if (R.moduleRelief) {
-    const s = R.moduleRelief.sensibilite(D.grille, D.A);
-    const eq = Number.isFinite(s.equivalente) ? `, soit l’équivalent d’une remise de ${decimal(Math.abs(s.equivalente) * 100, 0)}${NBSP}%` : '';
-    R.sensibilite.textContent = `Pour ce client, 10 % de remise sur tous les taux changent le prix de ${fmtPb(s.remise10)} ; `
-      + `abaisser tous les seuils d’un tiers le change de ${fmtPb(s.seuilsBas)}${eq} ; les relever de moitié, de ${fmtPb(s.seuilsHaut)}.`;
+  if (!g) {
+    R.phraseGain.append(D.obs.length < 5
+      ? `Il faut au moins cinq décisions passées — gagnées ou perdues, avec des offres comparables — pour estimer une chance de gain ; les réglages en retiennent ${entier(D.obs.length)}.`
+      : 'Aucune offre de l’expertise sous ces réglages : sans prix de marché, la chance de gain ne se situe pas.');
+    vider(R.zoneGain); R.courbeGain = null;
+    if (marge) vider(marge).append(...margeGain(null));
+    return;
   }
+  const m = g.modele; const c = g.courbe; const a = c.actuel;
+  const e = Math.round((Math.exp(g.xActuel) - 1) * 100);
+  const position = Math.abs(e) < 1 ? 'au prix médian du marché' : `${Math.abs(e)}${NBSP}% ${e < 0 ? 'sous le' : 'au-dessus du'} prix médian du marché`;
+  R.phraseGain.append(`Votre grille est ${position} à ${entier(D.A)} M€ : la chance de l’emporter est estimée à `,
+    h('b', { texte: pct(a.p) }), h('span.attenue', { texte: ` (entre ${Math.round(a.bas * 100)} et ${pct(a.haut)}). ` }));
+  const montrerOptimum = !g.plat;
+  if (montrerOptimum) {
+    const b = c.meilleur;
+    if (Math.abs(b.x - a.x) < 0.02) {
+      R.phraseGain.append(h('span.attenue', { texte: `C’est, à peu de chose près, le prix qui rapporte le plus en espérance : ${fmtFrais(a.espere)} sur ${pluriel2(S.horizon, 'an')}.` }));
+    } else {
+      R.phraseGain.append(`Le prix qui rapporte le plus en espérance est `, h('b', { texte: fmtTaux(g.tauxDe(b.x)) }),
+        h('span.attenue', { texte: ` (${fmtEcartPct(b.x)} vs médiane) : ${pct(b.p)} de chance, ${fmtFrais(b.espere)} espérés sur ${pluriel2(S.horizon, 'an')}, contre ${fmtFrais(a.espere)} aujourd’hui.` }));
+      const k = Math.exp(b.x - g.xActuel);
+      R.actionGain.append(h('button.bouton.bouton--petit', { type: 'button', texte: `Appliquer ce prix (${pctSigne(k - 1)} sur tous les taux)`,
+        onclick: () => charger(SIM.arrondirGrille(D.grille.map(t => ({ ...t, taux: t.taux * k }))),
+          `${S.origine.replace(/, (modifiée|ajustée.*)$/, '')}, ajustée au meilleur espoir de gain`) }));
+    }
+  }
+  // Ce sur quoi repose l'estimation : dit en une phrase, jamais caché.
+  const base = `${pluriel2(m.n, 'décision passée', 'décisions passées')} (${entier(m.gagnes)} gagnées), toutes expertises, chacune ramenée à son écart au marché.`;
+  if (g.repli) {
+    R.noteGain.append(h('b', { texte: 'Hypothèse moyenne. ' }),
+      `Vos ${base} Elles ne montrent pas que les offres moins chères gagnent plus souvent : le simulateur retient une sensibilité moyenne (${SIM.SENSIBILITES.moyenne.texte}). Changez-la ci-dessous.`);
+  } else if (S.sensibilite === 'donnees' || S.sensibilite === 'auto') {
+    R.noteGain.append(`Estimé sur vos ${base} `, g.plat
+      ? 'Les offres gagnées n’y étaient pas moins chères que les perdues : le prix ne les a pas départagées, la chance ne dépend donc pas du prix et aucun prix « optimal » ne s’en déduit. Choisissez une hypothèse pour raisonner.'
+      : (m.demontre ? 'L’effet du prix y est net.' : 'L’effet du prix y reste incertain : lisez la bande.'));
+  } else {
+    R.noteGain.append(h('b', { texte: `Hypothèse ${SIM.SENSIBILITES[S.sensibilite].libelle.toLowerCase()}. ` }),
+      `${capitale(SIM.SENSIBILITES[S.sensibilite].texte)} ; le niveau est calé sur vos ${base}`);
+  }
+  const p = { modele: m, courbe: c, decisions: g.obs, horizon: S.horizon, tauxDe: g.tauxDe, montrerOptimum,
+    surDecision: (o) => ouvrirOffre(o.id) };
+  if (!R.courbeGain) { R.courbeGain = courbeGain(p); vider(R.zoneGain).append(R.courbeGain.el); } else R.courbeGain.maj(p);
+  if (marge) vider(marge).append(...margeGain(g));
 }
 
-/** La variante telle qu'elle s'écrira dans la grille : seuils au multiple de
- * 5 M€, taux au millième de point. Le bandeau annonce CE prix-là, pas celui du
- * point exact de la nappe, pour que « Appliquer » ne réserve aucune surprise. */
-function grilleAjustee(remise, facteur) {
-  return T.ajuster(T.normaliser(S.lignes), remise, facteur)
-    .map(t => ({ minimum: Math.round(t.minimum / 5) * 5, maximum: t.maximum === null ? null : Math.round(t.maximum / 5) * 5,
-      taux: T.arrondiBp(t.taux) }));
+function margeGain(g) {
+  return margeTexte('Comment c’est estimé',
+    'Chaque offre gagnée ou perdue est ramenée à son <b>écart de prix</b> avec les autres offres de son expertise, à la taille de son mandat : c’est ce qui permet de mettre en commun toutes les décisions. Les carrés pleins, en haut, sont les gagnées ; les creux, en bas, les perdues.',
+    'La courbe est une régression logistique prudente : un a priori faible, et la contrainte qu’être plus cher ne fait pas gagner. La <b>bande</b> dit l’incertitude à 90 % ; les zones <b>hachurées</b> sont hors des décisions passées.',
+    '<b>Revenu espéré</b> : la chance de gagner × les frais sur la durée du mandat (réglages Durée et Croissance). Le « meilleur espoir » est le prix qui maximise ce produit, en gardant la forme de votre grille.',
+    g ? `Le prix, seul, n’explique pas une issue : la qualité de la gestion, la relation et le consultant pèsent autant. Ce bloc dit ce que le prix change, toutes choses égales par ailleurs.` : null);
 }
 
-function majVariante(v) {
-  vider(R.variante);
-  R.variante.hidden = !v;
-  if (!v) return;
-  const D = calculer();
-  v = { ...v, taux: T.tauxMoyen(T.normaliser(grilleAjustee(v.remise, v.facteur)), D.A) };
-  const f = D.A * v.taux / 100;
-  R.variante.append(h('span', {},
-    h('b', { texte: `${v.remise ? `${v.remise < 0 ? 'Remise' : 'Majoration'} de ${Math.abs(Math.round(v.remise * 100))}${NBSP}%` : 'Taux inchangés'}` }),
-    `, ${Math.abs(v.facteur - 1) < 0.005 ? 'seuils inchangés' : `seuils ×${decimal(v.facteur, 2)}`} : `,
-    h('b', { texte: fmtTaux(v.taux) }), ` · ${fmtFrais(f)} HT par an (${fmtPb(v.taux - D.tm)}, ${fmtEcartFrais(f - D.fr)}).`));
-  R.variante.append(h('span.relief-variante__actions', {},
-    h('button.bouton.bouton--petit', { type: 'button', texte: 'Appliquer à la grille', onclick: () => R.relief.appliquer() }),
-    lien('Annuler', () => R.relief.oublier())));
+/* ================================================= 05 la valeur du mandat === */
+function blocValeur() {
+  R.phraseValeur = h('p.prose.prose--bloc');
+  R.zoneValeur = h('div');
+  R.tableValeur = h('div.tableau');
+  const legende = h('div.legende-tarif', {},
+    h('span.legende-tarif__item', {}, h('span.aplat.aplat--barre'), 'frais de votre grille'),
+    h('span.legende-tarif__item', {}, h('span.aplat.aplat--hachure'), 'ce qu’il paierait en plus au taux moyen d’aujourd’hui'));
+  return bloc('valeur', 'Ce que rapporte le mandat', [R.phraseValeur, legende, R.zoneValeur, R.tableValeur], margeTexte('Lecture',
+    'Les frais de chaque année, si l’encours croît au rythme choisi dans les réglages (marchés et flux nets confondus). L’année 1 est le mandat tel qu’il se chiffre aujourd’hui.',
+    'Le <b>hachuré</b> : ce que paierait en plus le même encours à un taux unique, celui d’aujourd’hui. L’écart est ce que la dégressivité rend au client quand il grossit — l’argument, et le coût, d’une grille à paliers.',
+    'Survolez une année pour son détail.'));
 }
 
-function balayer() {
-  if (!R.relief) return;
-  const jusqua = Math.max(S.encours * 4, 400);
-  R.boutonBalayage.disabled = true;
-  R.relief.balayer({ jusqua,
-    surPas: (a) => { R.etatBalayage.textContent = `mandat à ${entier(a)} M€`; },
-    fin: () => { R.boutonBalayage.disabled = false; R.etatBalayage.textContent = ''; } });
+function majValeur(D) {
+  const pr = D.projection;
+  const der = pr.annees[pr.annees.length - 1];
+  vider(R.phraseValeur);
+  R.phraseValeur.append(`Sur ${pluriel2(S.horizon, 'an')}, à ${pctSigne(S.croissance)} par an, ce mandat rapporte `,
+    h('b', { texte: `${fmtFrais(pr.total)} HT` }), '. ');
+  if (S.horizon > 1 && Math.abs(S.croissance) > 1e-9) {
+    const hausseA = der.encours / D.A - 1; const hausseF = der.frais / pr.annees[0].frais - 1;
+    const rendu = pr.totalFixe - pr.total;
+    R.phraseValeur.append(h('span.attenue', { texte: `L’encours ${hausseA >= 0 ? 'aura grossi' : 'aura baissé'} de ${pctSigne(hausseA).replace('+', '')}, les frais de ${pctSigne(hausseF).replace('+', '')} seulement`
+      + (Math.abs(rendu) >= 0.0005 ? ` : la dégressivité ${rendu > 0 ? 'rend' : 'coûte'} ${fmtFrais(Math.abs(rendu))} au client par rapport au taux d’aujourd’hui.` : '.') }));
+  } else {
+    R.phraseValeur.append(h('span.attenue', { texte: `Sans croissance de l’encours, les frais restent de ${fmtFrais(D.fr)} chaque année.` }));
+  }
+  const p = { projection: pr };
+  if (!R.courbeValeur) { R.courbeValeur = courbeValeur(p); R.zoneValeur.append(R.courbeValeur.el); } else R.courbeValeur.maj(p);
+  // Le tableau jumeau : les mêmes nombres, à lire ou copier.
+  const t = h('table.donnees.table-valeur');
+  t.append(h('thead', {}, h('tr', {}, h('th', { texte: 'Année' }), h('th.num', { texte: 'Encours' }), h('th.num', { texte: 'Taux moyen' }),
+    h('th.num', { texte: 'Frais' }), h('th.num', { texte: 'Cumul' }))));
+  const tb = h('tbody');
+  for (const a of pr.annees) {
+    tb.append(h('tr', {}, h('td', { texte: `an ${a.annee}` }), h('td.num', { texte: fmtM(a.encours) }), h('td.num', { texte: fmtTaux(a.taux) }),
+      h('td.num', { texte: fmtFrais(a.frais) }), h('td.num', {}, h('b', { texte: fmtFrais(a.cumul) }))));
+  }
+  t.append(tb);
+  vider(R.tableValeur).append(t);
 }
 
-/* ========================================================= 05 expertises === */
+/* ======================================================== 06 négocier === */
+function blocNegocier() {
+  R.phraseNego = h('p.prose.prose--bloc');
+  R.champConcession = caseNombre({ valeur: S.concession * 100, pas: 0.5, decimales: 1, min: 0, max: 100, largeur: '58px',
+    etiquette: 'Effort demandé par le client, en points de base de taux moyen', surValeur: (v) => { S.concession = v / 100; majPlanifiee(); } });
+  R.raccourcisNego = h('span.raccourcis');
+  R.zoneNego = h('div');
+  const commandes = h('div.figure-commandes', {},
+    h('label.reglage', {}, h('span.reglage__c', { texte: 'Le client demande' }),
+      h('span.reglage__v', {}, R.champConcession, h('span.unite', { texte: 'pb de taux moyen' }))), R.raccourcisNego);
+  return bloc('negocier', 'Négocier sans se tromper de levier', [R.phraseNego, commandes, R.zoneNego], margeTexte('Lecture',
+    'Un même effort aujourd’hui — tant de points de base sur le taux moyen, à la taille actuelle — ne coûte pas la même chose sur la durée du mandat : tout dépend de <b>où</b> on le concède.',
+    'Baisser une tranche que l’encours <b>remplit déjà</b> coûte un montant fixe chaque année. Une <b>remise sur tous les taux</b> se paie aussi sur la croissance : chaque nouveau million est facturé moins cher.',
+    'Le coût est calculé sur la grille arrondie qui s’appliquerait (seuils au M€, taux au millième de point), avec la durée et la croissance des réglages.'), { large: true });
+}
+
+function majNegocier(D) {
+  const N = D.negociation;
+  vider(R.phraseNego); vider(R.zoneNego); vider(R.raccourcisNego);
+  R.champConcession.poser(S.concession * 100);
+  // Des raccourcis qui parlent : l'effort pour rejoindre le marché.
+  const raccourcis = [[0.01, '1 pb'], [0.02, '2 pb'], [0.05, '5 pb']];
+  if (D.marche.n && D.tm - D.marche.mediane > 0.0005) raccourcis.push([D.tm - D.marche.mediane, `jusqu’à la médiane (${fmtPb(D.tm - D.marche.mediane).replace('+', '')})`]);
+  if (D.marche.n && D.tm - D.marche.min > 0.0005) raccourcis.push([D.tm - D.marche.min, `jusqu’au plus bas (${fmtPb(D.tm - D.marche.min).replace('+', '')})`]);
+  for (const [v, t] of raccourcis) {
+    R.raccourcisNego.append(h('button.puce-filtre', { type: 'button', 'aria-pressed': String(Math.abs(v - S.concession) < 1e-6), texte: t,
+      onclick: () => { S.concession = Math.round(v * 1000) / 1000; maj(); } }));
+  }
+  if (!(S.concession > 0) || !N.options.length) {
+    R.phraseNego.append(!(S.concession > 0) ? 'Indiquez l’effort demandé pour comparer les leviers.'
+      : `Un effort de ${fmtPb(S.concession).replace('+', '')} dépasse le taux moyen de la grille (${fmtTaux(D.tm)}).`);
+    return;
+  }
+  const b = N.meilleur;
+  const annuel = S.concession * D.A / 100;
+  const uni = N.options.find(o => o.cle === 'uniforme');
+  const horizon = pluriel2(S.horizon, 'an');
+  if (!b) {
+    R.phraseNego.append(`Aucun levier ne permet d’accorder ${fmtPb(S.concession).replace('+', '')} sans passer un taux sous zéro.`);
+  } else {
+    R.phraseNego.append(`Pour accorder ${fmtPb(S.concession).replace('+', '')} — ${fmtFrais(annuel)} par an aujourd’hui —, le levier le moins coûteux est `,
+      h('b', { texte: b.libelle.charAt(0).toLowerCase() + b.libelle.slice(1) }), ` : ${fmtFrais(b.cout)} sur ${horizon}`);
+    if (uni && uni !== b && uni.faisable && uni.cout - b.cout >= 0.0005) {
+      R.phraseNego.append(h('span.attenue', { texte: `, contre ${fmtFrais(uni.cout)} pour une remise sur tous les taux.` }));
+    } else if (Math.abs(S.croissance) < 1e-9 || S.horizon === 1) {
+      R.phraseNego.append(h('span.attenue', { texte: '. Sans croissance de l’encours, tous les leviers se valent : la différence naît quand le mandat grossit.' }));
+    } else R.phraseNego.append('.');
+  }
+  const coutMax = Math.max(...N.options.filter(o => o.faisable).map(o => o.cout), 1e-9);
+  const t = h('table.donnees.table-leviers');
+  t.append(h('thead', {}, h('tr', {}, h('th', { texte: 'Levier' }), h('th', { texte: 'Ce qui change dans la grille' }),
+    h('th.num', { texte: `Frais à ${entier(D.A)} M€` }), h('th.th-cout', { texte: `Coût sur ${horizon}` }), h('th', { 'aria-label': 'Action' }))));
+  const tb = h('tbody');
+  for (const o of N.options) {
+    const tr = h('tr', { classe: o === b ? 'ligne-meilleure' : '' });
+    tr.append(h('td', {}, h('span.cellule-nom', { texte: o.libelle }), o === b ? h('span.cellule-sous', {}, h('b', { texte: 'le moins coûteux' })) : null));
+    tr.append(h('td', { texte: changement(o, D) }));
+    if (!o.faisable) {
+      tr.append(h('td.num.attenue', { texte: '—' }), h('td.attenue', { texte: 'impossible sans taux négatif' }), h('td'));
+    } else {
+      tr.append(h('td.num', {}, fmtFrais(o.fraisAujourdhui), h('span.cellule-sous', { texte: `${fmtEcartFrais(o.fraisAujourdhui - N.F0)} par an` })));
+      tr.append(h('td.cout-levier', {}, h('span.barre-cout', { 'aria-hidden': 'true' }, h('i', { style: { width: `${Math.max(2, (o.cout / coutMax) * 100)}%` } })),
+        h('b', { texte: fmtFrais(o.cout) }),
+        b && o !== b && o.cout - b.cout >= 0.0005 ? h('span.attenue', { texte: ` ${fmtEcartFrais(o.cout - b.cout)}` }) : null));
+      tr.append(h('td', {}, h('button.bouton.bouton--sobre.bouton--petit', { type: 'button', texte: 'Appliquer',
+        onclick: () => charger(o.grille, `${S.origine.replace(/, (modifiée|ajustée.*)$/, '')}, ajustée : ${o.libelle.toLowerCase()}`) })));
+    }
+    tb.append(tr);
+  }
+  t.append(tb);
+  R.zoneNego.append(h('div.tableau', {}, t));
+}
+
+/** Ce qu'un levier change, en une ligne lisible. */
+function changement(o, D) {
+  const d = o.detail;
+  if (o.cle === 'uniforme') return `tous les taux ${pctSigne(-d.remise)}`;
+  if (o.cle === 'seuils') {
+    if (!Number.isFinite(d.facteur)) return 'les seuils ne suffisent pas';
+    const avant = D.grille.slice(1).map(t => entier(t.minimum)).join(' / ');
+    const apres = o.grille.slice(1).map(t => entier(t.minimum)).join(' / ');
+    return `seuils ${avant} → ${apres} M€`;
+  }
+  if (!o.faisable) return `T${d.tranche + 1} ne porte pas assez d’encours`;
+  return `T${d.tranche + 1} : ${fmtTaux(d.avant)} → ${fmtTaux(o.grille[d.tranche].taux)}`;
+}
+
+/* ========================================================= 07 expertises === */
 function blocExpertises() {
   R.corpsExpertises = h('tbody');
   R.teteExpertises = h('thead');
-  R.mesures = h('div.relief-vues', { role: 'group', 'aria-label': 'Mesure' });
+  R.mesures = h('div.groupe-puces', { role: 'group', 'aria-label': 'Mesure' });
   for (const [cle, texte] of [['mediane', 'Médiane'], ['moyenne', 'Moyenne']]) {
     R.mesures.append(h('button.puce-filtre', { type: 'button', 'aria-pressed': String(cle === S.mesure), texte,
       onclick: (e) => {
@@ -659,6 +962,12 @@ function majExpertises(D) {
   const moi = h('tr.ligne-moi', {}, h('td', { texte: 'Votre grille' }), h('td.num', { texte: '' }),
     ...TAILLES_REFERENCE.map(t => h('td.num', {}, h('b', { texte: fmtTaux(T.tauxMoyen(D.grille, t)) }))));
   R.corpsExpertises.append(moi);
+  // Le rang de votre grille dans l'expertise choisie, à chaque taille : la lecture d'un consultant.
+  const elig0 = eligibles();
+  if (elig0.length) {
+    R.corpsExpertises.append(h('tr.ligne-moi.ligne-rang', {}, h('td', { texte: `Son rang, ${libelleExpertise(S.expertise)}` }), h('td.num', { texte: '' }),
+      ...TAILLES_REFERENCE.map(t => h('td.num', { texte: positionCourte(T.centile(elig0.map(g => T.tauxMoyen(g.tranches, t)), T.tauxMoyen(D.grille, t))) }))));
+  }
   for (const e of S.donnees.expertises) {
     const elig = eligibles(e.cle);
     const tr = h('tr', { 'data-clic': '', classe: e.cle === S.expertise ? 'ligne-choisie' : '',
@@ -675,10 +984,10 @@ function majExpertises(D) {
   }
 }
 
-/* ============================================================ 06 offres === */
+/* ============================================================ 08 offres === */
 function blocOffres() {
   R.zoneOffres = h('div');
-  R.bascule = h('div.relief-vues', { role: 'group', 'aria-label': 'Périmètre de la liste' });
+  R.bascule = h('div.groupe-puces', { role: 'group', 'aria-label': 'Périmètre de la liste' });
   R.margeOffres = h('div');
   return bloc('offres', 'Les offres passées', [R.bascule, R.zoneOffres], R.margeOffres, { large: true });
 }
@@ -801,7 +1110,7 @@ async function recharger() {
   maj({ offres: true });
 }
 
-/* =========================================================== 07 classeur === */
+/* =========================================================== 09 classeur === */
 /** L'écran Données, directement à la section des grilles. */
 function allerAuxGrilles() {
   R.ctx.aller('donnees');
@@ -848,6 +1157,7 @@ function majClasseur() {
   R.zoneClasseur.append(ul);
 }
 
+
 /* ============================================================ ouverture === */
 function majOuverture(D) {
   const exp = libelleExpertise(S.expertise);
@@ -855,52 +1165,57 @@ function majOuverture(D) {
   R.lede.append(`À ${entier(D.A)} M€, votre grille facture `);
   R.lede.append(h('b', { texte: fmtTaux(D.tm), style: { fontWeight: 500 } }));
   R.lede.append(` — ${fmtFrais(D.fr)} HT par an. `);
-  // Deux phrases, pas trois : le prix, puis sa place parmi ce qui a été fait.
+  // Deux phrases : le prix, puis sa place et ce qu'il vaut sur la durée.
   const suite = h('span.attenue');
   const f = D.marche;
-  if (f.n) {
-    suite.append(`${capitale(cherete(D.centile))} ${exp} déjà faites à cette taille, qui allaient de ${fmtTaux(f.min)} à ${fmtTaux(f.max)}.`);
-  } else {
-    suite.append(`Aucune offre ${exp} ne répond aux réglages : élargissez les années ou l’issue pour situer ce prix.`);
-  }
+  suite.append(f.n ? `${capitale(cherete(D.centile))} ${exp} à cette taille ; sur ${pluriel2(S.horizon, 'an')}, le mandat rapporterait ${fmtFrais(D.projection.total)}.`
+    : `Aucune offre ${exp} ne répond aux réglages : élargissez les années ou l’issue pour situer ce prix.`);
   R.lede.append(suite);
 
   vider(R.matin);
-  const fait = (valeur, libelle) => h('span', {}, h('b', { texte: valeur }), ` ${libelle}`);
-  R.matin.append(fait(fmtTaux(D.tm), 'de taux moyen'), fait(fmtFrais(D.fr), 'HT par an'));
-  if (f.n) R.matin.append(fait(positionCourte(D.centile), `parmi ${pluriel2(f.n, 'offre')} ${exp}`));
-  if (f.gagnes.n) {
-    const e = ecart(D.tm - f.gagnes.mediane);
-    R.matin.append(e.valeur ? fait(e.valeur, `${e.sens} la médiane des gagnées`)
-      : h('span', { texte: 'Au niveau de la médiane des gagnées' }));
-  }
+  const fait = (valeur, libelle, cible) => h('span', {}, cible
+    ? h('a.nombre', { href: `#bloc-${cible}`, texte: valeur, onclick: (e) => { e.preventDefault(); document.getElementById(`bloc-${cible}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } })
+    : h('b', { texte: valeur }), ` ${libelle}`);
+  R.matin.append(fait(fmtTaux(D.tm), 'de taux moyen', 'escalier'));
+  if (f.n) R.matin.append(fait(positionCourte(D.centile), `parmi ${pluriel2(f.n, 'offre')} ${exp}`, 'marche'));
+  if (D.gain) R.matin.append(fait(pct(D.gain.courbe.actuel.p), `de chance de gagner${D.gain.repli || S.sensibilite !== 'donnees' && S.sensibilite !== 'auto' ? ' (hypothèse)' : ''}`, 'gain'));
+  R.matin.append(fait(fmtFrais(D.projection.total), `sur ${pluriel2(S.horizon, 'an')}`, 'valeur'));
 
   vider(R.margeOuverture).append(...margeTexte('La simulation',
-    `Expertise <b>${exp}</b>, mandat de <b>${entier(D.A)} M€</b>, grille à ${pluriel2(D.grille.length, 'tranche')}.`,
-    `Comparée aux offres ${S.filtres.de !== null ? `de ${S.filtres.de} à ${S.filtres.a}` : ''}, ${[...S.filtres.issues].map(i => i.toLowerCase()).join(', ')}.`),
+    `Expertise <b>${exp}</b>, mandat de <b>${entier(D.A)} M€</b> sur ${pluriel2(S.horizon, 'an')}, encours ${pctSigne(S.croissance)} par an.`,
+    `Grille à ${pluriel2(D.grille.length, 'tranche')}, comparée à ${pluriel2(D.elig.length, 'offre')} passée${D.elig.length > 1 ? 's' : ''}.`),
   h('p.marge-texte', {}, lien('Recommencer depuis la grille type', () => {
     try { localStorage.removeItem(MEMOIRE); } catch (e) { /* rien */ }
-    S.encours = 150; R.champEncours.value = 150; R.curseurEncours.value = versCurseur(150);
+    S.encours = 150; R.champEncours.poser(150); R.curseurEncours.value = versCurseur(150);
     charger(S.donnees.grille_type, 'la grille type de la présentation (page 2)');
   })));
 }
 
 /* ================================================================ maj === */
-let attente = null;
-function maj({ offres = false, source = null } = {}) {
+function maj({ offres = false } = {}) {
+  enAttente = false;
   const D = calculer();
   majOuverture(D);
   peindreTuiles();
+  majComparer();
   if (!R.lignesGrille || R.lignesGrille.length !== S.lignes.length) peindreGrille();
   majGrille(D);
+  majEscalier(D);
   majMarche(D);
-  majCourbe(D);
+  majGain(D);
+  majValeur(D);
+  majNegocier(D);
   majExpertises(D);
   if (offres || !R.offresPeintes) { majOffres(); majClasseur(); R.offresPeintes = true; }
-  // Le relief suit la frappe sans la freiner : une image après la dernière touche.
-  clearTimeout(attente);
-  attente = setTimeout(() => majRelief(calculer()), source === 'grille' ? 90 : 0);
   memoriser();
+}
+
+// Un geste continu (tirer une marche, glisser le curseur) ne recalcule qu'une fois par image.
+let enAttente = false;
+function majPlanifiee() {
+  if (enAttente) return;
+  enAttente = true;
+  requestAnimationFrame(() => { if (enAttente) maj(); });
 }
 
 /* =========================================================== la fiche === */

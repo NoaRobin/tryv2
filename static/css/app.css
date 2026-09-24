@@ -684,11 +684,9 @@ main { padding: 36px 0 0; }
 .saisie:focus { outline: 2px solid var(--ink); outline-offset: 1px; border-color: var(--ink); }
 .saisie[aria-invalid="true"] { border-color: var(--ink); border-style: dashed; background: var(--b-6); }
 .saisie--encours { width: 84px; text-align: right; }
-.saisie--borne { width: 70px; text-align: right; }
-.saisie--taux { width: 70px; text-align: right; }
 .saisie--offre { max-width: 300px; }
 .saisie--libelle { width: 100%; min-width: 150px; }
-input[type="number"].saisie::-webkit-inner-spin-button { opacity: .35; }
+input.saisie[inputmode="decimal"] { text-align: right; }
 .curseur { width: 150px; accent-color: var(--ink); margin-left: 6px; }
 
 .puce-filtre {
@@ -766,40 +764,74 @@ table.grille-tarif tfoot td { border-bottom: 0; padding-top: 12px; }
 .aplat--fonce { background: var(--b-12); }
 .repere-marche { margin-top: 2px; }
 
-/* Le relief : pleine largeur, repères de lecture sous la figure. */
+/* Les blocs pleine largeur : repères de lecture sous la figure, en deux colonnes. */
 .bloc--large { grid-template-columns: minmax(0, 1fr); }
 .bloc--large .bloc__marge { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--gouttiere); }
 .bloc--large .bloc__marge .marge-titre { grid-column: 1 / -1; }
-.relief-hote {
-  position: relative; height: 500px; margin: 8px 0 10px; border-top: 1px solid var(--b-12); border-bottom: 1px solid var(--b-12);
-  background: radial-gradient(ellipse at 50% 40%, var(--blanc) 0%, var(--b-3) 100%); overflow: hidden;
-}
-.relief__toile { width: 100%; height: 100%; display: block; touch-action: none; }
-.relief__calque { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.relief__etiquette { position: absolute; left: 0; top: 0; white-space: nowrap; --dx: -50%; --dy: -50%; will-change: transform; }
-.relief__graduation { font-size: 11px; color: var(--b-72); font-variant-numeric: tabular-nums; }
-.relief__graduation--droite { --dx: -100%; }
-.relief__graduation--gauche { --dx: 0%; }
-.relief__titre-axe { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--b-72); }
-.relief__titre-axe--haut { --dx: -80%; --dy: -100%; }
-.relief__offre {
-  --dy: -100%; background: var(--blanc); border: 1px solid var(--ink); padding: 3px 8px; font-size: 12px; color: var(--ink);
-}
-.relief__offre b { font-weight: 620; }
-.relief__offre--variante { border-style: dashed; }
-.relief__limite { --dx: 10px; font-size: 10.5px; color: var(--ink); background: rgba(255, 255, 255, .88); padding: 1px 5px; }
-.relief-commandes { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.relief-commandes__droite { display: inline-flex; gap: 12px; align-items: center; }
-.relief-vues { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
-.relief-commandes .relief-vues { margin-bottom: 0; }
-.relief-variante {
-  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 10px 12px; background: var(--b-3); border-left: 2px solid var(--ink); font-size: 13.5px; margin-bottom: 10px;
-}
-.relief-variante b { font-weight: 620; }
-.relief-variante[hidden] { display: none; }
-.relief-variante__actions { display: inline-flex; gap: 14px; align-items: center; }
-.relief-lecture { font-size: 13.5px; max-width: 90ch; }
+.bloc--large .bloc__marge > .marge-gain { display: contents; }
+.groupe-puces { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.figure-commandes { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin: 4px 0 8px; }
+.figure-commandes .legende-tarif, .figure-commandes .groupe-puces { margin: 0; }
+.figure-commandes__gauche { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.figure-commandes__droite { display: inline-flex; gap: 12px; align-items: center; }
+.sous-titre { font-size: 10.5px; font-weight: 620; letter-spacing: .15em; text-transform: uppercase; color: var(--b-72); margin: 30px 0 4px; }
+
+/* Les offres comparées : un résumé qui s'ouvre sur ses filtres. */
+.comparer { margin-top: 10px; }
+.comparer__resume { font-size: 13px; }
+.comparer__filtres { margin-top: 10px; }
+.comparer__filtres[hidden] { display: none; }
+
+/* La grille : ce que le client met dans chaque tranche. */
+.grille-tarif__part { white-space: nowrap; }
+.grille-tarif__part .num { display: inline-block; min-width: 2.2em; text-align: right; }
+.fleche-part { color: var(--b-52); }
+.grille-tarif__client { min-width: 150px; }
+.part-client { display: inline-block; vertical-align: middle; width: 64px; height: 8px; background: var(--b-6);
+  box-shadow: inset 0 0 0 1px var(--b-12); margin-right: 8px; }
+.part-client i { display: block; height: 100%; background: var(--b-52); }
+.part-client__v { font-size: 12.5px; }
+.grille-tarif__frais .cellule-sous { white-space: nowrap; }
+.lecture-grille { font-size: 14px; color: var(--b-72); margin: 14px 0 0; }
+.lecture-grille b { color: var(--ink); font-weight: 620; }
+
+/* L'escalier des frais. */
+.escalier { position: relative; margin: 2px 0 6px; user-select: none; -webkit-user-select: none; }
+.escalier__svg { width: 100%; height: auto; display: block; overflow: visible; touch-action: none; }
+.escalier .graduation { font-size: 10.5px; fill: var(--b-72); font-variant-numeric: tabular-nums; }
+.escalier .titre-axe { font-size: 10px; fill: var(--b-72); letter-spacing: .08em; text-transform: uppercase; }
+.escalier .etiquette-fin { font-size: 11.5px; fill: var(--b-72); }
+.escalier .etiquette-fin--forte { fill: var(--ink); font-weight: 620; }
+.escalier__frais { font-size: 12px; font-weight: 620; fill: var(--ink); font-variant-numeric: tabular-nums; pointer-events: none; }
+.escalier__marche { font-size: 12px; fill: var(--ink); font-variant-numeric: tabular-nums; pointer-events: none; }
+.escalier__marche-nom { fill: var(--b-72); font-weight: 620; letter-spacing: .06em; }
+.escalier__lecture { font-size: 14px; font-weight: 620; fill: var(--ink); font-variant-numeric: tabular-nums; pointer-events: none; }
+.escalier__sous { font-size: 12px; fill: var(--b-72); pointer-events: none; }
+.escalier__poignee { fill: transparent; outline: none; }
+.escalier__poignee--taux { cursor: ns-resize; }
+.escalier__poignee--seuil, .escalier__poignee--encours { cursor: ew-resize; }
+.escalier__poignee:focus-visible { fill: var(--b-12); stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 2; }
+.escalier--geste-taux, .escalier--geste-taux * { cursor: ns-resize !important; }
+.escalier--geste-seuil, .escalier--geste-seuil *, .escalier--geste-encours, .escalier--geste-encours * { cursor: ew-resize !important; }
+.aplat--paye { background: var(--b-36); }
+.aplat--barre { background: var(--b-52); width: 12px; }
+.trait--tirets { border-top: 1.5px dashed var(--b-52); }
+.aplat--hachure { background: repeating-linear-gradient(135deg, var(--b-36) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 1px var(--b-72); }
+.figure-tarif .etiquette-repere--fort { fill: var(--ink); font-weight: 560; }
+
+/* La chance de gagner, la valeur, la négociation. */
+.note-gain { max-width: 92ch; margin: -4px 0 16px; }
+.note-gain b { color: var(--ink); }
+table.table-valeur { max-width: 520px; margin-top: 14px; }
+table.table-valeur td, table.table-valeur th { padding-top: 6px; padding-bottom: 6px; }
+table.table-leviers td { vertical-align: middle; }
+table.table-leviers .ligne-meilleure td { background: var(--b-3); }
+table.table-leviers .ligne-meilleure td:first-child { box-shadow: inset 3px 0 0 var(--ink); padding-left: 10px; }
+.cout-levier { min-width: 260px; white-space: nowrap; padding-left: 28px !important; }
+table.table-leviers th.th-cout { padding-left: 28px; }
+.barre-cout { display: inline-block; vertical-align: middle; width: 160px; height: 10px; background: var(--b-6); margin-right: 10px; }
+.barre-cout i { display: block; height: 100%; background: var(--b-72); border-radius: 0 2px 2px 0; }
+.raccourcis { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 
 /* Le référentiel des expertises et la liste des offres. */
 table.table-expertises td, table.table-offres td { white-space: nowrap; }

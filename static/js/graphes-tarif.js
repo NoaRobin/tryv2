@@ -407,3 +407,221 @@ export function bandeTranche(resume, taux, domaine) {
   }
   return svg;
 }
+
+/* ======================================================================= */
+/*  Le prix et la chance de gagner : deux panneaux, un même axe des prix   */
+/* ======================================================================= */
+/**
+ * En haut, la chance de l'emporter selon l'écart au prix médian du marché, avec
+ * sa bande d'incertitude et chaque décision passée (gagnée en haut, perdue en
+ * bas). En bas, le revenu espéré : chance × frais sur la durée. Les deux
+ * panneaux partagent l'axe des prix — jamais deux échelles sur un même tracé.
+ */
+export function courbeGain(options) {
+  const hote = div('figure-tarif');
+  const bulle = infobulle(hote);
+  const svg = s('svg', { class: 'figure-tarif__svg', role: 'img' });
+  hote.prepend(svg);
+  let courant = null;
+
+  function dessiner(o) {
+    courant = o;
+    const L = o.largeur || 1040;
+    const m = { g: 64, d: 170, h: 48, b: 40 };
+    const h1 = 200; const ecart = 44; const h2 = 150;
+    const H = m.h + h1 + ecart + h2 + m.b;
+    const lp = L - m.g - m.d;
+    svg.setAttribute('viewBox', `0 0 ${L} ${H}`);
+    svg.setAttribute('aria-label', 'Chance de gagner et revenu espéré selon le prix');
+    svg.replaceChildren();
+    const c = o.courbe; const [lo, hi] = c.domaine;
+    const X = (x) => m.g + ((x - lo) / (hi - lo)) * lp;
+    const y1 = (p) => m.h + h1 - p * h1;
+    const top2 = m.h + h1 + ecart;
+    const eMax = plafondJoli(Math.max(...c.points.map(p => p.espere), c.actuel.espere) * 1.1, 4);
+    const y2 = (v) => top2 + h2 - (v / eMax) * h2;
+    const md = o.modele;
+
+    // Zones sans décision : hachurées, le modèle y extrapole.
+    const motif = s('pattern', { id: 'hachure-gain', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
+      s('line', { x1: 0, y1: 0, x2: 0, y2: 6, stroke: 'var(--b-12)', 'stroke-width': 2 }));
+    svg.append(s('defs', {}, motif));
+    for (const [a, b] of [[lo, md.xMin], [md.xMax, hi]]) {
+      if (b - a <= 0) continue;
+      for (const [t, hh] of [[m.h, h1], [top2, h2]]) svg.append(s('rect', { x: X(a), y: t, width: X(b) - X(a), height: hh, fill: 'url(#hachure-gain)' }));
+    }
+
+    // Axes.
+    const ticksX = [0.5, 0.75, 1, 1.25, 1.5, 2].map(Math.log).filter(x => x >= lo - 1e-9 && x <= hi + 1e-9);
+    for (const x of ticksX) {
+      for (const [t, hh] of [[m.h, h1], [top2, h2]]) svg.append(s('line', { x1: X(x), x2: X(x), y1: t, y2: t + hh, stroke: x === 0 ? 'var(--b-22)' : 'var(--b-6)' }));
+      const pct = Math.round((Math.exp(x) - 1) * 100);
+      svg.append(s('text', { x: X(x), y: top2 + h2 + 18, 'text-anchor': 'middle', class: 'graduation' },
+        pct === 0 ? 'médiane' : `${pct > 0 ? '+' : MOINS}${Math.abs(pct)}${NBSP}%`));
+    }
+    svg.append(s('text', { x: m.g + lp, y: H - 4, 'text-anchor': 'end', class: 'titre-axe' }, 'Votre prix, en écart au prix médian du marché'));
+    for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+      svg.append(s('line', { x1: m.g, x2: m.g + lp, y1: y1(p), y2: y1(p), stroke: 'var(--b-6)' }));
+      svg.append(s('text', { x: m.g - 8, y: y1(p) + 4, 'text-anchor': 'end', class: 'graduation' }, `${Math.round(p * 100)}${NBSP}%`));
+    }
+    for (const v of graduations(eMax, 3)) {
+      svg.append(s('line', { x1: m.g, x2: m.g + lp, y1: y2(v), y2: y2(v), stroke: 'var(--b-6)' }));
+      svg.append(s('text', { x: m.g - 8, y: y2(v) + 4, 'text-anchor': 'end', class: 'graduation' }, fmtFrais(v)));
+    }
+    for (const t of [m.h + h1, top2 + h2]) svg.append(s('line', { x1: m.g, x2: m.g + lp, y1: t, y2: t, stroke: 'var(--b-22)' }));
+
+    // La bande et la courbe de la chance de gagner.
+    let dBande = ''; let dHaut = '';
+    c.points.forEach((p, i) => { dBande += `${i ? 'L' : 'M'}${X(p.x).toFixed(1)},${y1(p.haut).toFixed(1)}`; });
+    for (let i = c.points.length - 1; i >= 0; i--) dBande += `L${X(c.points[i].x).toFixed(1)},${y1(c.points[i].bas).toFixed(1)}`;
+    svg.append(s('path', { d: `${dBande}Z`, fill: 'var(--b-12)' }));
+    c.points.forEach((p, i) => { dHaut += `${i ? 'L' : 'M'}${X(p.x).toFixed(1)},${y1(p.p).toFixed(1)}`; });
+    svg.append(s('path', { d: dHaut, fill: 'none', stroke: 'var(--b-100)', 'stroke-width': 2.5 }));
+    let dE = '';
+    c.points.forEach((p, i) => { dE += `${i ? 'L' : 'M'}${X(p.x).toFixed(1)},${y2(p.espere).toFixed(1)}`; });
+    svg.append(s('path', { d: dE, fill: 'none', stroke: 'var(--b-100)', 'stroke-width': 2.5 }));
+
+    // Les décisions passées : gagnées sur la ligne des 100 %, perdues sur celle des 0 %.
+    const places = { 1: [], 0: [] };
+    for (const d of [...o.decisions].sort((a, b) => a.x - b.x)) {
+      const x = X(Math.max(lo, Math.min(hi, d.x)));
+      const rang = places[d.gagne];
+      let k = 0;
+      while (rang.some(r => r.k === k && Math.abs(r.x - x) < 12)) k++;
+      rang.push({ x, k });
+      const y = d.gagne ? y1(1) - 9 - k * 12 : y1(0) + 9 + k * 12;
+      const g = marque(d.offre.issue, x, y, 9, { tabindex: 0, role: 'button', 'aria-label': `${d.titre} : ${d.gagne ? 'gagnée' : 'perdue'}, ${fmtEcartPct(d.x)} vs marché` });
+      g.append(s('circle', { cx: x, cy: y, r: 11, fill: 'transparent' }));
+      g.addEventListener('pointerenter', () => {
+        const e = svg.getBoundingClientRect().width / L;
+        bulle.montrer([d.titre, ['Issue', d.offre.issue], ['Son prix', fmtTaux(d.taux)], ['Médiane du marché à sa taille', fmtTaux(d.mediane)],
+          ['Écart', fmtEcartPct(d.x)]], x * e, y * e);
+      });
+      g.addEventListener('pointerleave', () => bulle.cacher());
+      if (o.surDecision) {
+        g.style.cursor = 'pointer';
+        g.addEventListener('click', () => o.surDecision(d.offre));
+        g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); o.surDecision(d.offre); } });
+      }
+      svg.append(g);
+    }
+
+    // Votre prix, et le prix qui rapporte le plus en espérance.
+    const repere = (x, texte, fort, cote) => {
+      const px = X(Math.max(lo, Math.min(hi, x)));
+      svg.append(s('line', { x1: px, x2: px, y1: m.h, y2: top2 + h2, stroke: 'var(--b-100)', 'stroke-width': fort ? 1.5 : 1,
+        'stroke-dasharray': fort ? null : '4 3' }));
+      const aGauche = cote === 'gauche' || px > m.g + lp - 120;
+      svg.append(s('line', { x1: px, x2: px, y1: m.h - 34, y2: m.h, stroke: 'var(--b-100)', 'stroke-width': fort ? 1.5 : 1,
+        'stroke-dasharray': fort ? null : '4 3' }));
+      svg.append(s('text', { x: px + (aGauche ? -6 : 6), y: m.h - 26, 'text-anchor': aGauche ? 'end' : 'start',
+        class: fort ? 'etiquette-fin etiquette-fin--forte' : 'etiquette-fin' }, texte));
+    };
+    const a = c.actuel;
+    if (o.montrerOptimum && Math.abs(c.meilleur.x - a.x) > 0.01) {
+      repere(c.meilleur.x, `meilleur espoir · ${fmtTaux(o.tauxDe(c.meilleur.x))}`, false, c.meilleur.x < a.x ? 'gauche' : 'droite');
+      svg.append(s('circle', { cx: X(c.meilleur.x), cy: y2(c.meilleur.espere), r: 5, fill: 'var(--blanc)', stroke: 'var(--b-100)', 'stroke-width': 2 }));
+      svg.append(s('circle', { cx: X(c.meilleur.x), cy: y1(c.meilleur.p), r: 5, fill: 'var(--blanc)', stroke: 'var(--b-100)', 'stroke-width': 2 }));
+    }
+    repere(a.x, `votre grille · ${fmtTaux(o.tauxDe(a.x))}`, true, o.montrerOptimum && c.meilleur.x > a.x ? 'gauche' : 'droite');
+    for (const [cy, v] of [[y1(a.p), `${Math.round(a.p * 100)}${NBSP}%`], [y2(a.espere), fmtFrais(a.espere)]]) {
+      svg.append(s('circle', { cx: X(a.x), cy, r: 6, fill: 'var(--b-100)', stroke: 'var(--blanc)', 'stroke-width': 2 }));
+      svg.append(s('text', { x: X(a.x) + 10, y: cy - 8, class: 'etiquette-fin etiquette-fin--forte' }, v));
+    }
+    // Étiquettes de fin de courbe.
+    const der = c.points[c.points.length - 1];
+    svg.append(s('text', { x: m.g + lp + 8, y: y1(der.p) + 4, class: 'etiquette-fin' }, 'chance de gagner'));
+    svg.append(s('text', { x: m.g + lp + 8, y: y2(der.espere) + 4, class: 'etiquette-fin' }, `revenu espéré sur ${o.horizon} an${o.horizon > 1 ? 's' : ''}`));
+
+    // Réticule : la lecture à n'importe quel prix.
+    const ret = s('line', { y1: m.h, y2: top2 + h2, stroke: 'var(--b-72)', visibility: 'hidden', 'pointer-events': 'none' });
+    svg.append(ret);
+    const capte = s('rect', { x: m.g, y: m.h + 14, width: lp, height: h1 - 28, fill: 'transparent' });
+    const capte2 = s('rect', { x: m.g, y: top2, width: lp, height: h2, fill: 'transparent' });
+    const lire = (ev) => {
+      const r = svg.getBoundingClientRect(); const e = r.width / L;
+      const px = (ev.clientX - r.left) / e;
+      const i = Math.max(0, Math.min(c.points.length - 1, Math.round(((px - m.g) / lp) * (c.points.length - 1))));
+      const p = c.points[i];
+      ret.setAttribute('x1', X(p.x)); ret.setAttribute('x2', X(p.x)); ret.setAttribute('visibility', 'visible');
+      bulle.montrer([`À ${fmtTaux(o.tauxDe(p.x))} (${fmtEcartPct(p.x)} vs médiane)`,
+        ['Chance de gagner', `${Math.round(p.p * 100)}${NBSP}% (${Math.round(p.bas * 100)}–${Math.round(p.haut * 100)})`],
+        [`Frais sur ${o.horizon} ans si gagné`, fmtFrais(p.valeur)], ['Revenu espéré', fmtFrais(p.espere)],
+        ...(p.x < md.xMin || p.x > md.xMax ? [['', 'hors des décisions passées']] : [])], X(p.x) * e, (ev.clientY - r.top));
+    };
+    for (const k of [capte, capte2]) {
+      k.addEventListener('pointermove', lire);
+      k.addEventListener('pointerleave', () => { bulle.cacher(); ret.setAttribute('visibility', 'hidden'); });
+      svg.insertBefore(k, svg.querySelector('.marque-offre'));
+    }
+  }
+
+  dessiner(options);
+  return { el: hote, maj: (o) => dessiner({ ...courant, ...o }) };
+}
+
+/** Un écart de prix : x = ln(ratio) → « +18 % », « −27 % ». */
+export function fmtEcartPct(x) {
+  if (!Number.isFinite(x)) return '—';
+  const p = Math.round((Math.exp(x) - 1) * 100);
+  return p === 0 ? 'au prix médian' : `${p > 0 ? '+' : MOINS}${Math.abs(p)}${NBSP}%`;
+}
+
+/* ======================================================================= */
+/*  La valeur du mandat : les frais année après année                      */
+/* ======================================================================= */
+export function courbeValeur(options) {
+  const hote = div('figure-tarif');
+  const bulle = infobulle(hote);
+  const svg = s('svg', { class: 'figure-tarif__svg', role: 'img' });
+  hote.prepend(svg);
+  let courant = null;
+
+  function dessiner(o) {
+    courant = o;
+    const L = o.largeur || 660; const H = 262;
+    const m = { g: 56, d: 16, h: 14, b: 48 };
+    const lp = L - m.g - m.d; const hp = H - m.h - m.b;
+    svg.setAttribute('viewBox', `0 0 ${L} ${H}`);
+    svg.setAttribute('aria-label', 'Frais annuels du mandat, année par année');
+    svg.replaceChildren();
+    const an = o.projection.annees;
+    const yMax = plafondJoli(Math.max(...an.map(a => Math.max(a.frais, a.fixe))) * 1.08, 4);
+    const Y = (v) => m.h + hp - (v / yMax) * hp;
+    const pasX = lp / an.length;
+    const lb = Math.min(64, pasX * 0.6);
+    svg.append(s('defs', {}, s('pattern', { id: 'hachure-valeur', width: 5, height: 5, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
+      s('line', { x1: 0, y1: 0, x2: 0, y2: 5, stroke: 'var(--b-36)', 'stroke-width': 1.5 }))));
+    for (const v of graduations(yMax, 4)) {
+      svg.append(s('line', { x1: m.g, x2: m.g + lp, y1: Y(v), y2: Y(v), stroke: 'var(--b-6)' }));
+      svg.append(s('text', { x: m.g - 8, y: Y(v) + 4, 'text-anchor': 'end', class: 'graduation' }, fmtFrais(v)));
+    }
+    an.forEach((a, i) => {
+      const cx = m.g + pasX * (i + 0.5);
+      const x0 = cx - lb / 2;
+      // La barre des frais, arrondie côté données, ancrée à la ligne de base.
+      const yt = Y(a.frais); const r = Math.min(3, Y(0) - yt);
+      svg.append(s('path', { d: `M${x0},${Y(0)}V${yt + r}Q${x0},${yt} ${x0 + r},${yt}H${x0 + lb - r}Q${x0 + lb},${yt} ${x0 + lb},${yt + r}V${Y(0)}Z`,
+        fill: 'var(--b-52)' }));
+      // Au-dessus, hachuré : ce que le même encours paierait au taux fixe d'aujourd'hui.
+      if (a.fixe - a.frais > yMax * 0.002) {
+        svg.append(s('rect', { x: x0, y: Y(a.fixe), width: lb, height: Math.max(1, yt - Y(a.fixe) - 2), fill: 'url(#hachure-valeur)',
+          stroke: 'var(--b-72)', 'stroke-width': 1, 'stroke-dasharray': '2 2' }));
+      }
+      svg.append(s('text', { x: cx, y: H - 28, 'text-anchor': 'middle', class: 'etiquette-repere etiquette-repere--fort' }, fmtFrais(a.frais)));
+      svg.append(s('text', { x: cx, y: H - 12, 'text-anchor': 'middle', class: 'graduation' }, `an ${a.annee}`));
+      const zone = s('rect', { x: cx - pasX / 2, y: m.h, width: pasX, height: hp, fill: 'transparent' });
+      zone.addEventListener('pointerenter', () => {
+        const e = svg.getBoundingClientRect().width / L;
+        bulle.montrer([`Année ${a.annee}`, ['Encours', `${entier(a.encours)} M€`], ['Taux moyen', fmtTaux(a.taux)],
+          ['Frais', fmtFrais(a.frais)], ['Au taux fixe d’aujourd’hui', fmtFrais(a.fixe)], ['Cumul', fmtFrais(a.cumul)]], cx * e, Y(a.frais) * e);
+      });
+      zone.addEventListener('pointerleave', () => bulle.cacher());
+      svg.append(zone);
+    });
+    svg.append(s('line', { x1: m.g, x2: m.g + lp, y1: Y(0), y2: Y(0), stroke: 'var(--b-22)' }));
+  }
+
+  dessiner(options);
+  return { el: hote, maj: (o) => dessiner({ ...courant, ...o }) };
+}

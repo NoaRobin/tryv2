@@ -1165,7 +1165,79 @@ def _auto_test() -> None:
     ok, message = _parite_js(grilles)
     assert ok, message
     print(f"   ✓ {message}")
+    print("8. Les simulateurs du gérant : valeur, leviers, chance de gain")
+    ok, message = _controle_simulateurs(grilles)
+    assert ok, message
+    print(f"   ✓ {message}")
     print("\nTous les contrôles sont passés.")
+
+
+def _controle_simulateurs(grilles: Sequence[Grille]) -> tuple[bool, str]:
+    """Exécute static/js/simulateurs.js sous node et vérifie ses invariants contre
+    le calcul Python : projection exacte, concession tenue par chaque levier,
+    sensibilité au prix retrouvée sur des décisions synthétiques."""
+    node = shutil.which("node")
+    module = Path(__file__).resolve().parent / "static" / "js" / "simulateurs.js"
+    if not node or not module.exists():
+        return True, "node absent : simulateurs non vérifiés"
+    type_ = [Tranche(a, b, t) for a, b, t in GRILLE_TYPE]
+    grille = [asdict(t) for t in type_]
+    offres = [{"id": g.id, "expertise_cle": g.expertise_cle, "issue": g.issue, "volume": g.volume,
+               "exclue": g.exclue, "tranches": [asdict(t) for t in g.tranches]} for g in grilles]
+    script = (
+        "import('" + module.as_uri() + "').then(M => {"
+        "const g = JSON.parse(process.argv[1]); const offres = JSON.parse(process.argv[2]);"
+        "const proj = M.projeter(g, 150, { horizon: 5, croissance: 0.03 });"
+        "const lev = M.leviers(g, 150, 0.01, { horizon: 5, croissance: 0.03 });"
+        "const lev0 = M.leviers(g, 150, 0.01, { horizon: 5, croissance: 0 });"
+        # Décisions synthétiques : les offres chères perdent, les bon marché gagnent.
+        "const synth = []; for (let i = 0; i < 40; i++) { const x = -0.4 + 0.8 * i / 39; synth.push({ x, gagne: (i % 5 === 0 ? x > 0 : x < 0) ? 1 : 0 }); }"
+        "const mS = M.modeleGain(synth, 'donnees');"
+        # Décisions à l'envers (les chères gagnent) : la contrainte b ≤ 0 doit jouer.
+        "const inv = synth.map(o => ({ ...o, gagne: 1 - o.gagne }));"
+        "const mI = M.modeleGain(inv, 'donnees');"
+        "const obs = M.decisions(offres); const mE = M.modeleGain(obs, 'moyenne');"
+        "const r = M.revenuEspere(mS, { xActuel: 0, valeurActuelle: 1 });"
+        "process.stdout.write(JSON.stringify({ proj, lev: lev.options.map(o => ({ cle: o.cle, f: o.faisable, fa: o.fraisAujourdhui, c: o.cout, cr: o.concessionReelle })),"
+        " lev0: lev0.options.map(o => ({ cle: o.cle, c: o.cout })), meilleur: lev.meilleur && lev.meilleur.cle,"
+        " mS: { b: mS.b, demontre: mS.demontre }, mI: { b: mI.b, contraint: mI.contraint }, nObs: obs.length, bE: mE.b,"
+        " opt: r.meilleur.x, pOpt: r.meilleur.p }));"
+        "});")
+    try:
+        res = subprocess.run([node, "--input-type=module", "-e", script, json.dumps(grille), json.dumps(offres)],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"node n'a pas pu s'exécuter : {exc}"
+    if res.returncode != 0:
+        return False, res.stderr.strip()[:400]
+    js = json.loads(res.stdout)
+    # La projection : année n = frais(150 × 1,03^(n−1)), au centime près.
+    attendu = sum(frais(type_, 150 * 1.03 ** k) for k in range(5))
+    if abs(js["proj"]["total"] - attendu) > 1e-12 or abs(js["proj"]["annees"][0]["frais"] - 0.14) > 1e-12:
+        return False, f"projection divergente : {js['proj']['total']} contre {attendu}"
+    # Chaque levier faisable tient la concession demandée (1 pb, au millième près après arrondi).
+    for o in js["lev"]:
+        if o["f"] and abs(o["cr"] - 0.01) > 0.0006:
+            return False, f"levier {o['cle']} : concession réelle {o['cr']}"
+    couts = [o["c"] for o in js["lev"] if o["f"]]
+    if couts != sorted(couts) or js["meilleur"] != js["lev"][0]["cle"]:
+        return False, "leviers mal classés"
+    # Remise uniforme plus chère qu'une tranche déjà pleine quand l'encours croît ; égale sans croissance.
+    c = {o["cle"]: o["c"] for o in js["lev"]}
+    if not c["uniforme"] > c["marginale"]:
+        return False, "la remise uniforme devrait coûter plus quand l'encours croît"
+    c0 = {o["cle"]: o["c"] for o in js["lev0"]}
+    if abs(c0["uniforme"] - c0["marginale"]) > 1e-9:
+        return False, "sans croissance, uniforme et marginale devraient coûter pareil"
+    if not (js["mS"]["b"] < -1 and js["mS"]["demontre"]):
+        return False, f"sensibilité synthétique non retrouvée : b = {js['mS']['b']}"
+    if not (js["mI"]["b"] == 0 and js["mI"]["contraint"]):
+        return False, "la contrainte « plus cher ne fait pas gagner » n'a pas joué"
+    if js["nObs"] < 5 or js["bE"] != -2.8:
+        return False, "décisions de l'échantillon mal lues"
+    return True, (f"projection exacte, 1 pb tenu par chaque levier (le moins coûteux : {js['meilleur']}), "
+                  f"sensibilité retrouvée (b = {js['mS']['b']:.2f}), contrainte b ≤ 0 appliquée, "
+                  f"{js['nObs']} décisions dans l'échantillon")
 
 
 if __name__ == "__main__":

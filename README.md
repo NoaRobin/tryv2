@@ -145,7 +145,8 @@ l’activité.
 | `export.py` | Le rapport HTML autonome | plotly |
 | `tarification.py` | Le moteur tarifaire : lecture du classeur des grilles, contrôle des anomalies, calcul progressif, corridors par tranche, croisement avec l’activité | pandas |
 | `static/js/tarif.js` | Le même calcul en JavaScript, pour simuler sans aller-retour serveur ; sa parité avec Python est testée | — |
-| `static/js/relief.js` | Le relief 3D du prix (Three.js 0.169, livré dans `static/vendor/`, sans réseau) | three |
+| `static/js/simulateurs.js` | Les simulateurs du gérant : valeur du mandat sur sa durée, leviers de négociation, chance de gain selon le prix ; testés sous node par `python tarification.py` | — |
+| `static/js/escalier.js` | L’escalier des frais : la grille dessinée telle que le client la paie, manipulable et animée (SVG) | — |
 | `assets/` | Inter et EB Garamond (SIL OFL) ; emplacement du logo officiel | — |
 
 `core.py` n’importe pas FastAPI : il se teste et se réutilise seul (notebook,
@@ -204,21 +205,40 @@ Chaque analyse porte sa phrase, sa figure, sa note de méthode et son tableau
 jumeau. Un clic sur une catégorie recalcule tout le périmètre.
 
 **Tarification** — le simulateur de prix d’appels d’offres, reconstruit depuis
-le rapport Power BI d’origine (inventaire et arbitrages angle par angle :
-[`docs/simulateur-tarification.md`](docs/simulateur-tarification.md)). On
-compose une grille **dans le tableau** — les bornes et les taux s’éditent, le
-prix et les fourchettes se recalculent à la frappe — et chaque tranche est
-située dans ce qui a déjà été pratiqué sur la même part d’encours. Puis : le prix
-dans le marché (le rang parmi les offres passées de l’expertise, à la taille du
-client), la dégressivité (le taux moyen selon la taille, avec la bande de ce qui
-a été fait), **le relief du prix** (une nappe 3D : remise ou majoration de tous
-les taux × seuils divisés ou doublés → taux payé, colorée par le rang dans les
-offres passées ; un point se choisit sur la nappe et s’écrit dans la grille ;
-« Si le mandat grossit » fait défiler la taille), le tableau des expertises aux
-tailles de référence, les offres passées — chacune ouvre **sa fiche** : sa
-grille, sa courbe, son rang, ses anomalies, les comparables, les autres offres
-du client et, croisé avec le classeur d’activité, son dossier d’appel d’offres
-et le contexte de l’année (dossiers reçus, taux de succès, encours médian).
+le rapport Power BI d’origine puis repensé du point de vue du gérant
+(inventaire, arbitrages et décisions :
+[`docs/simulateur-tarification.md`](docs/simulateur-tarification.md)). Les
+réglages : l’expertise, la taille du mandat, sa durée et la croissance supposée
+de l’encours ; les offres comparées se résument en une ligne qui s’ouvre sur ses
+filtres. Puis, dans l’ordre où l’on se pose les questions :
+
+1. **La grille**, en haut, éditable dans le tableau : pour chaque tranche, la
+   part d’encours, le taux, ce que l’encours du client y met, les frais qu’elle
+   produit, et sa place face au marché sur la même part (sous le plus bas, sous
+   ou au-dessus de la médiane…). Couper une tranche en deux, en retirer une,
+   partir de la grille type, de la référence de l’expertise ou d’une offre passée.
+2. **L’escalier des frais** : chaque marche est une tranche (largeur = part
+   d’encours, hauteur = taux), la surface pleine est ce que paie le client, la
+   bande grise ce que le marché facturait. Tout se tire à la souris ou au
+   clavier ; « Faire grandir le mandat » fait courir l’encours et remplit
+   l’escalier.
+3. **Face au marché** : le rang parmi les offres passées à la taille du client,
+   et la dégressivité à toutes les tailles.
+4. **Le prix et la chance de gagner** : toutes les décisions passées, ramenées à
+   leur écart au prix du marché, donnent une chance de gain selon le prix ; le
+   revenu espéré (chance × frais sur la durée) désigne le prix qui rapporte le
+   plus. Quand les décisions ne suffisent pas à mesurer l’effet du prix,
+   l’écran le dit et retient une hypothèse, modifiable.
+5. **Ce que rapporte le mandat** : les frais année après année, et ce que la
+   dégressivité rend au client quand l’encours grossit.
+6. **Négocier sans se tromper de levier** : pour un effort demandé (en pb de
+   taux moyen), le coût sur la durée d’une remise uniforme, d’une baisse de la
+   tranche où tombe l’encours, de la première tranche ou des seuils ; chacun
+   s’applique d’un clic.
+7. Les expertises aux tailles de référence (avec le rang de votre grille), les
+   offres passées — chacune ouvre **sa fiche** : grille, courbe, rang,
+   anomalies, comparables, autres offres du client et, croisé avec le classeur
+   d’activité, son dossier d’appel d’offres — et la qualité du classeur.
 
 **Dossiers** — la recherche plein texte, la liste, et la fiche d’un dossier avec
 les autres dossiers du même client.
